@@ -186,6 +186,10 @@ class FakeLive(live.Live):
 
     standalone = False  # POST /fake/standalone {"on": true}: the fixtures as the endpoint's own templates, detected
 
+    @property
+    def detecting(self) -> bool:
+        return FakeLive.standalone
+
     async def _record(self, http: Any, name: str, info: dict[str, Any] | None = None) -> dict[str, Any]:
         return await super()._record(http, name, info) if self.saddle else json.loads(json.dumps(FIXTURES["records"][name]))
 

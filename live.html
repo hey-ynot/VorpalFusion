@@ -422,6 +422,7 @@
     <label>Live steps <span id="lpv">auto</span><input id="lp" type="range" min="0" max="8" value="0" aria-label="Live steps"></label>
     <label>Seed <input id="seedv" type="number" min="0" step="1" aria-label="Seed"></label>
     <span id="tknobs" class="knobs"></span>
+    <label><input id="showuntuned" type="checkbox"> Show untuned templates <span id="untunedn"></span></label>
   </div>
   <div class="tpl">
     <h3>Template</h3>
@@ -1357,18 +1358,29 @@ addEventListener('keyup', (e) => { if (e.key === 'b' && !hovered) hideCompare();
 addEventListener('blur', () => { if (!hovered) hideCompare(); });
 
 // Templates, pictures, settings.
-// A template outside the tuned families says "untuned"; one the sidecar still checks is listed, not choosable, until known.
-function fillChooser() {
-  const groups = [...new Set(templates.map((t) => t.group))];
-  const label = (t) => t.checking ? `${t.title} · checking…` : t.untuned ? `${t.title} · untuned` : t.title;
+// The chooser lists Saddle's templates as Saddle lists them; on its own, the tuned templates, with the untuned ones
+// that passed the sidecar's check only when Settings says so. Templates still being checked never show, and the list is rebuilt only when what it shows changes and the
+// chooser is not open, so it never closes under the pointer.
+let showUntuned = store?.getItem('gv.untuned') === '1', shown = '';
+const visible = () => templates.filter((t) => !t.checking && (!t.untuned || !t.detected || showUntuned || t.name === template));
+function fillChooser(force = false) {
+  const list = visible(), key = JSON.stringify(list.map((t) => t.name));
+  const ready = templates.filter((t) => t.untuned && !t.checking).length, checking = templates.filter((t) => t.checking).length;
+  $('untunedn').textContent = ready || checking ? `(${ready}${checking ? `, ${checking} still checking` : ''})` : '';
+  if (key === shown || (!force && document.activeElement === $('template'))) return;
+  shown = key;
+  const groups = [...new Set(list.map((t) => t.group))];
   $('template').innerHTML = groups.map((g) => `<optgroup label="${esc(g)}">`
-    + templates.filter((t) => t.group === g).map((t) => `<option value="${esc(t.name)}"${t.checking ? ' disabled' : ''}>${esc(label(t))}</option>`).join('') + '</optgroup>').join('');
+    + list.filter((t) => t.group === g).map((t) => `<option value="${esc(t.name)}">${esc(t.untuned ? `${t.title} · untuned` : t.title)}</option>`).join('') + '</optgroup>').join('');
   if (template) $('template').value = template;
 }
+$('template').addEventListener('blur', () => fillChooser());
+$('showuntuned').checked = showUntuned;
+$('showuntuned').addEventListener('change', () => { showUntuned = $('showuntuned').checked; store?.setItem('gv.untuned', showUntuned ? '1' : '0'); shown = ''; fillChooser(true); });
 async function fetchTemplates() {
   const r = await call('templates'); if (!r?.ok) return false;
   templates = await r.json(); fillChooser();
-  if (templates.some((t) => t.checking)) setTimeout(fetchTemplates, 2000);
+  if (templates.some((t) => t.checking)) setTimeout(fetchTemplates, 5000);
   return true;
 }
 async function resync() {

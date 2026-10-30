@@ -246,6 +246,11 @@ class Live:
         self.pack = False  # the endpoint runs VorpalFusion's node pack (nodes/): Flow keeps its latents there
         self.presubmit: asyncio.Task | None = None
 
+    @property
+    def detecting(self) -> bool:
+        """Whether the templates offered are the sidecar's own finds (no Saddle lists them)."""
+        return not self.saddle
+
     async def use(self, name: str) -> dict[str, Any]:
         self.profile, self.epoch = await self._profile(name, fresh=True), self.epoch + 1
         self.pack = await self._has("GVLatentRecall")
@@ -1248,11 +1253,11 @@ async def reply(send, status: int, body: bytes = b"", kind: bytes = b"applicatio
     await send({"type": "http.response.body", "body": body})
 
 
-def listing(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def listing(rows: list[dict[str, Any]], detected: bool = False) -> list[dict[str, Any]]:
     """The templates that make a picture or a clip, by title, grouped Image / Edit / Clip; `untuned` outside the TUNED
-    families, `checking` while the sidecar still checks one."""
+    families, `checking` while the sidecar still checks one, `detected` when the sidecar found it (no Saddle to list it)."""
     groups = {"Image": 0, "Edit": 1, "Clip": 2}
-    found = [{"name": row["name"], "title": title(row), "untuned": not TUNED.match(row["name"]), "checking": bool(row.get("checking")),
+    found = [{"name": row["name"], "title": title(row), "untuned": not TUNED.match(row["name"]), "checking": bool(row.get("checking")), "detected": detected,
               "group": "Clip" if row.get("kind") == "video" else "Edit" if row.get("job") == "edit" else "Image"}
              for row in rows if row.get("role") == "creation" and row.get("kind") in ("image", "video")
              and row.get("compatibility", row.get("validation_status")) != "blocked"]
@@ -1270,7 +1275,7 @@ async def app(scope, receive, send) -> None:
         page = "live.html" if path == "/" else "host.html"
         await reply(send, 200, (HERE / page).read_bytes(), b"text/html; charset=utf-8")
     elif path == "/templates" and method == "GET":
-        await reply(send, 200, json.dumps(listing(await live.catalog())).encode())
+        await reply(send, 200, json.dumps(listing(await live.catalog(), detected=live.detecting)).encode())
     elif path == "/template" and method == "POST":
         try:
             described = await live.use(json.loads(await read_body(receive))["name"])

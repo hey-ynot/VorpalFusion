@@ -1011,12 +1011,14 @@ if (!process.argv.includes('--live')) {
   const { context: dc, page: q } = await open();
   const option = (n) => q.$eval(`#template option[value="${n}"]`, (o) => ({ text: o.textContent, disabled: o.disabled })).catch(() => null);
 
-  await check('detection: a template outside the tuned list shows checking…, then is offered labelled untuned, and runs live on the generic profile', async () => {
+  await check('detection: a template outside the tuned list stays out of the chooser until checked and Settings shows untuned ones, then runs live on the generic profile', async () => {
     await ready(q);
     const first = await option('image_fake_untuned_t2i'), tuned = await option('image_z_image_turbo');
-    assert(first?.disabled && /checking…$/.test(first.text), `before its check: ${JSON.stringify(first)}`);
+    assert(!first, `listed while unchecked: ${JSON.stringify(first)}`);
     assert(tuned && !tuned.disabled && !/untuned|checking/.test(tuned.text), `a tuned template: ${JSON.stringify(tuned)}`);
     await q.waitForFunction(() => templates.length && !templates.some((t) => t.checking), null, { timeout: 15000 });
+    assert(!(await option('image_fake_untuned_t2i')), 'an untuned template is listed by default');
+    await q.evaluate(() => { const b = document.getElementById('showuntuned'); b.checked = true; b.dispatchEvent(new Event('change')); });
     const after = await option('image_fake_untuned_t2i');
     assert(after && !after.disabled && /· untuned$/.test(after.text), `after its check: ${JSON.stringify(after)}`);
     await choose(q, 'image_fake_untuned_t2i');
