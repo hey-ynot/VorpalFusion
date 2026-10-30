@@ -1,0 +1,1743 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VorpalFusion</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { color-scheme: dark; --amber: #f5a524; --ink: #ecebe8; --dim: #9c9890; --faint: #6c6963; --panel: #0a0a0a; --line: #1e1e1e;
+          --glass: #0c0c0cd9; --edge: #ffffff14; --hover: #ffffff0f; --r: 10px; --ease: cubic-bezier(.2, .7, .2, 1);
+          --tint: color-mix(in srgb, var(--amber) 14%, transparent); --tint-edge: color-mix(in srgb, var(--amber) 45%, transparent); }
+  * { box-sizing: border-box; }
+  body { margin: 0; height: 100vh; height: 100dvh; display: grid; grid-template-rows: minmax(0, 1fr) auto auto auto; grid-template-columns: minmax(0, 1fr);
+         background: #000; color: var(--ink); font: 14px/1.4 -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", sans-serif; overflow: hidden;
+         -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+  [hidden] { display: none !important; }
+  button { height: 32px; padding: 0 12px; border-radius: var(--r); border: 1px solid var(--edge); background: #ffffff0a; color: var(--ink); cursor: pointer;
+           font: inherit; font-size: 13px; white-space: nowrap; transition: background .16s var(--ease), color .16s var(--ease), border-color .16s var(--ease); }
+  button:hover { background: #ffffff17; }
+  button:disabled { opacity: .5; cursor: default; }
+  button[aria-pressed=true] { background: var(--tint); border-color: var(--tint-edge); color: var(--amber); }
+  select, input[type=number], input[type=text] { height: 32px; min-width: 0; border-radius: var(--r); border: 1px solid var(--edge); background: #ffffff0a;
+           color: var(--ink); padding: 0 10px; font: inherit; font-size: 13px; }
+  input[type=range] { width: 110px; height: 24px; accent-color: var(--amber); }
+  kbd { font: inherit; }
+
+  /* The stage: a status line on top, the tools rail on the left, the picture everywhere else. Nothing overlaps the picture. */
+  .stage { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
+           grid-template-areas: "top top" "rail view"; overflow: hidden; container-type: size; min-height: 200px; isolation: isolate; }
+  .stage::before { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 30%; z-index: 0; background: linear-gradient(transparent, #000); pointer-events: none; }
+  .glow { position: absolute; inset: -20%; width: 140%; height: 140%; filter: blur(90px) saturate(1.3); opacity: .28; z-index: -1; pointer-events: none; }
+  .top { grid-area: top; position: relative; z-index: 4; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; padding: 12px 16px 4px; }
+  .brand { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -.01em; color: var(--ink); white-space: nowrap; }
+  .brand span { color: var(--amber); }
+  /* One status line: what is happening, the GPU, and a timings toggle; the live job's progress runs along its bottom edge. */
+  .hudline { position: relative; display: flex; align-items: center; gap: 10px; min-width: 0; max-width: min(760px, 100%); height: 32px; padding: 0 4px 0 14px;
+             border-radius: 999px; background: var(--glass); border: 1px solid var(--edge); overflow: hidden; backdrop-filter: blur(20px); }
+  .hudline:has(.status:is(.failed, .busy, .offline, .needs)) { background: #2a1d05e6; border-color: var(--tint-edge); }
+  .status { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 0; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .status::before { content: ''; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+  .status:is(.live, .refining, .finishing, .climbing, .queued, .loading, .waiting)::before { background: var(--amber); box-shadow: 0 0 0 3px var(--tint); }
+  .status:is(.settled, .graduated, .kept, .downloaded)::before { background: var(--ink); }
+  .status:is(.failed, .busy, .offline, .needs) { color: var(--amber); }
+  .status:is(.failed, .busy, .offline, .needs)::before { background: var(--amber); }
+  .status:empty { display: none; }
+  .meter { flex: 0 1 auto; min-width: 0; margin: 0; padding-left: 10px; border-left: 1px solid var(--edge); font-size: 12px; color: var(--dim);
+           white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .meter:empty { display: none; }
+  .meter.off { color: var(--amber); }
+  #hudbtn { flex: none; width: 24px; height: 24px; padding: 0; border-radius: 50%; font-size: 12px; font-weight: 600; color: var(--dim); }
+  .pulse { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--amber); width: 0; transition: width 70ms linear; }
+  .settled .pulse { opacity: 0; transition: opacity .6s .4s; }
+  .hud { position: absolute; top: calc(100% + 2px); left: 50%; transform: translateX(-50%); z-index: 4; margin: 0; padding: 4px 12px; border-radius: 999px;
+         background: var(--glass); font-size: 12px; color: var(--dim); white-space: nowrap; max-width: calc(100% - 32px); overflow: hidden; text-overflow: ellipsis; }
+
+  /* The tools rail: a label and its key, pressed state in amber. */
+  .rail { grid-area: rail; z-index: 3; display: flex; flex-direction: column; gap: 2px; width: 168px; padding: 10px 8px 12px 14px; overflow: auto; scrollbar-width: none; }
+  .rail h2 { margin: 12px 8px 4px; font-size: 11px; font-weight: 600; color: var(--faint); text-transform: uppercase; letter-spacing: .07em; }
+  .rail h2:first-child { margin-top: 2px; }
+  .rail button { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; height: 34px; padding: 0 8px 0 10px;
+                 border-color: transparent; background: transparent; text-align: left; }
+  .rail button:hover { background: var(--hover); }
+  .rail button[aria-pressed=true] { background: var(--tint); border-color: var(--tint-edge); }
+  .rail button::after { content: attr(data-key) / ""; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 5px; border: 1px solid var(--edge);
+                        font-size: 11px; line-height: 18px; text-align: center; color: var(--dim); }
+  .rail button[aria-pressed=true]::after { color: var(--amber); border-color: var(--tint-edge); }
+  .split { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 0; }
+  .split button { flex: 1; height: 28px; padding: 0; justify-content: center; border-color: var(--edge); font-size: 13px; }
+  .split button::after { content: none; }
+
+  /* The picture: as large as the view allows, a caption row under it (what it is · the ladder). */
+  .view { grid-area: view; position: relative; display: grid; place-items: center; min-width: 0; min-height: 0; container-type: size; }
+  .frame { --cols: 1; --rows: 1; --cap: 46px; --grid: calc(var(--aspect, 1) * var(--cols) / var(--rows)); position: relative; margin-bottom: var(--cap);
+           width: min(100cqw - 32px, (100cqh - 24px - var(--cap)) * var(--grid)); aspect-ratio: var(--grid); }
+  .frame > img, .frame > video { position: absolute; left: 0; top: 0; width: calc(100% / var(--cols)); height: calc(100% / var(--rows));
+               object-fit: contain; border-radius: 14px; transition: opacity 280ms ease, filter 160ms ease-out; }
+  .frame > #compare { width: 100%; height: 100%; }
+  .cells { position: absolute; inset: 0; z-index: 1; }
+  .cells:empty { display: none; }
+  .cell { position: absolute; width: calc(100% / var(--cols)); height: calc(100% / var(--rows)); padding: 0; border: 0; border-radius: 14px;
+          background: transparent; outline-offset: -3px; }
+  .cell:hover { background: transparent; }
+  .cell img { width: 100%; height: 100%; object-fit: contain; border-radius: 14px; }
+  .cell img:not([src]) { visibility: hidden; }
+  .cell .n { position: absolute; left: 8px; top: 8px; min-width: 22px; height: 22px; border-radius: 999px; background: #000b; color: var(--amber);
+             font-size: 12px; line-height: 22px; }
+  .cell:hover, .cell:focus-visible { outline: 2px solid var(--amber); }
+  /* Split: a 3 px gutter around each panel, the stage's own picture included. */
+  .frame:has(.cells:not(:empty)) > :is(img, video):not(#compare), .cell { padding: 3px; }
+  .frame:has(.cells:not(:empty)) > img { border-radius: 16px; }
+  .cap { position: absolute; left: 0; right: 0; top: 100%; z-index: 3; display: flex; justify-content: flex-end; align-items: center; gap: 8px; height: var(--cap); padding-top: 8px; }
+  .tag { margin-right: auto; min-width: 0; padding: 4px 10px; border-radius: 999px; background: var(--glass); color: var(--amber); font-size: 12px;
+         overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tag:empty { display: none; }
+  /* The ladder: the rung on stage, then what to do with a good picture. */
+  .ladder { flex: none; display: flex; align-items: center; gap: 2px; padding: 3px; border-radius: 12px; background: var(--glass); border: 1px solid var(--edge); }
+  .ladder:not(:has(> :not([hidden]):not(:empty))) { display: none; }
+  .empty:not([hidden]) + .frame .ladder { display: none; }
+  .ladder button { height: 28px; padding: 0 11px; border-color: transparent; background: transparent; border-radius: 9px; }
+  .ladder button:hover { background: var(--hover); }
+  #grad { background: var(--amber); color: #111; font-weight: 600; }
+  #grad:hover { background: color-mix(in srgb, var(--amber) 85%, #fff); }
+  #grad:disabled { background: var(--tint); color: var(--amber); opacity: 1; }
+  #dl { padding: 0 11px 0 9px; }
+  .rung { padding: 0 8px 0 9px; color: var(--amber); font-size: 12px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; }
+  .rung:empty { display: none; }
+  .node[data-rung]::before { content: attr(data-rung); position: absolute; left: 2px; bottom: 2px; padding: 0 3px; border-radius: 3px; background: #000c;
+                             font-size: 8px; line-height: 11px; color: var(--amber); white-space: nowrap; }
+  .node.climbing { animation: climb 1s ease-in-out infinite alternate; }
+  @keyframes climb { to { box-shadow: 0 0 0 3px #f5a52466; } }
+  /* A playing clip: a duration bar along its bottom edge and a sound toggle, out of the way while it plays. */
+  .scrub { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; height: 14px; display: flex; align-items: flex-end; cursor: pointer;
+           opacity: .7; transition: opacity .2s; touch-action: none; }
+  .scrub .track { position: relative; width: 100%; height: 2px; background: #ffffff1f; border-radius: 0 0 14px 14px; overflow: hidden; transition: height .12s; }
+  .scrub .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--amber); }
+  .scrub .time { position: absolute; right: 8px; bottom: 10px; font-size: 11px; color: var(--ink); text-shadow: 0 1px 3px #000; opacity: 0; }
+  .scrub:hover .track, .scrub:focus .track { height: 6px; }
+  .scrub:hover .time, .scrub:focus .time { opacity: 1; }
+  .vol { position: absolute; right: 10px; bottom: 14px; z-index: 3; width: 30px; height: 30px; padding: 0; display: grid; place-items: center; background: #000a;
+         border-radius: 50%; opacity: 0; transition: opacity .25s; }
+  .vol svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+  .frame:hover .vol, .vol:focus-visible, .frame.paused .vol, .frame:hover .scrub, .scrub:focus-visible, .frame.paused .scrub { opacity: 1; }
+  .frame.clip.playing:not(:hover):not(:focus-within) .scrub { opacity: .7; }
+  .frame > img { transition-duration: 90ms, 160ms; }
+  .frame .back { opacity: 0; }
+  .frame img:not([src]), .frame video:not([src]) { display: none; }
+  .settled .frame > img { filter: none !important; }
+  .stale .frame > :is(img, video):not(.back):not(#compare) { filter: grayscale(.7) brightness(.45) !important; }
+  #compare { z-index: 2; background: #000; }
+  /* Layout boxes and the pin: a thin overlay on the picture, 0-1000 on both sides; H hides it. */
+  .boxes { position: absolute; inset: 0; z-index: 2; pointer-events: none; touch-action: none; }
+  .boxes.tool { pointer-events: auto; cursor: crosshair; }
+  .boxes.off > * { display: none; }
+  .box { position: absolute; border: 1px solid var(--amber); border-radius: 3px; background: #f5a52412; pointer-events: auto; cursor: move; }
+  .box:focus-visible { outline: 2px solid var(--amber); }
+  .box input { position: absolute; left: -1px; bottom: 100%; width: 9em; height: 22px; margin-bottom: 3px; padding: 0 7px; font-size: 12px;
+               color: var(--amber); background: #000c; border: 1px solid var(--amber); border-radius: 6px; }
+  .box .grip { position: absolute; right: -5px; bottom: -5px; width: 10px; height: 10px; border-radius: 2px; background: var(--amber); cursor: nwse-resize; }
+  .box .x { position: absolute; right: -9px; top: -9px; width: 18px; height: 18px; padding: 0; border-radius: 999px; font-size: 11px; line-height: 16px; background: #000c; }
+  .pinned { position: absolute; border: 1px dashed #8fe3ff; border-radius: 3px; pointer-events: none; box-shadow: 0 0 0 1px #0008; }
+  .pinned::before { content: 'pinned'; position: absolute; left: 4px; bottom: 3px; font-size: 10px; color: #8fe3ff; text-shadow: 0 1px 2px #000; }
+  .empty { position: absolute; z-index: 3; margin: 0; padding: 0 24px; color: var(--dim); font-size: 17px; letter-spacing: -.01em; text-align: center; line-height: 1.6; }
+  .empty .addpic { margin-bottom: 8px; padding: 0 18px; height: 40px; font-size: 15px; border-color: var(--tint-edge); background: var(--tint); color: var(--amber); }
+  .next { position: absolute; right: 16px; top: 8px; z-index: 3; width: 128px; border-radius: 10px; overflow: hidden; opacity: 0; transition: opacity .2s;
+          outline: 1px solid var(--edge); }
+  .next.on { opacity: 1; }
+  .next img { display: block; width: 100%; filter: blur(1px); }
+  .next span { position: absolute; left: 8px; bottom: 6px; font-size: 11px; color: var(--amber); text-shadow: 0 1px 4px #000; }
+  .stage.drop::after { content: 'Drop a picture'; position: absolute; inset: 12px; border: 2px dashed var(--amber); border-radius: 20px;
+                       display: grid; place-items: center; color: var(--amber); font-size: 18px; background: #000a; z-index: 5; }
+  /* The seed field and side by side: overlays over the whole stage. */
+  .field { position: absolute; inset: 0; z-index: 6; display: grid; place-items: center; background: #000000eb; opacity: 0; pointer-events: none;
+           transition: opacity .18s; backdrop-filter: blur(12px); }
+  .field.on { opacity: 1; pointer-events: auto; }
+  .fieldbar { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); display: flex; gap: 12px; align-items: center; color: var(--dim); font-size: 12px; }
+  .fieldbar input[type=range] { width: 90px; }
+  .chips { display: inline-flex; flex-wrap: wrap; gap: 2px; align-items: center; color: var(--dim); font-size: 12px; }
+  .chips button { height: 28px; padding: 0 9px; font-size: 12px; border-color: transparent; background: transparent; border-radius: 8px; color: var(--dim); }
+  .chips button:hover { background: var(--hover); color: var(--ink); }
+  .chips button[aria-pressed=true] { background: var(--tint); border-color: var(--tint-edge); color: var(--amber); }
+  .chips > span[aria-hidden] { width: 1px; height: 16px; margin: 0 5px; background: var(--edge); color: transparent; overflow: hidden; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: min(100cqh - 72px, 100cqw - 24px); }
+  .grid button { height: auto; padding: 0; aspect-ratio: var(--aspect, 1); border-radius: 10px; overflow: hidden; background: #111 center/cover;
+                 border: 1px solid #222; }
+  .grid button.current { outline: 2px solid var(--amber); }
+  .grid button[aria-busy=true] { background-image: linear-gradient(100deg, #111 30%, #1d1d1d 50%, #111 70%); background-size: 200% 100%;
+                                 animation: shimmer 1.2s infinite; }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+  .ab { position: absolute; inset: 0; z-index: 7; display: flex; flex-wrap: wrap; gap: 10px; align-content: center; justify-content: center;
+        padding: 14px; background: #000000f2; }
+  .ab figure { margin: 0; flex: 1 1 260px; max-width: 48%; min-width: 0; }
+  .ab img { width: 100%; max-height: 70cqh; object-fit: contain; border-radius: 10px; }
+  .ab figcaption { margin-top: 6px; color: var(--dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ab button { position: absolute; top: 12px; right: 12px; }
+  /* What the model read: beside the picture, under the status line. */
+  .read { position: absolute; right: 16px; top: 56px; z-index: 4; width: min(340px, calc(100% - 32px)); max-height: calc(100% - 120px); overflow: auto;
+          padding: 12px 14px; border-radius: 14px; background: var(--glass); border: 1px solid var(--edge); font-size: 13px; line-height: 1.5; backdrop-filter: blur(20px); }
+  .read h3 { margin: 0 0 4px; font-size: 11px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; }
+  .read p { margin: 0 0 10px; }
+  .read ins { color: var(--amber); text-decoration: none; background: #f5a5241f; border-radius: 3px; }
+  .read del { color: var(--dim); text-decoration: line-through; }
+  .read .use { height: 28px; font-size: 12px; }
+
+  /* The clip timeline: a card per picture slot at its moment; references with their role. Only for clip templates. */
+  .timeline { display: flex; gap: 12px; align-items: stretch; padding: 10px max(16px, calc((100% - 980px) / 2)) 24px; border-top: 1px solid var(--line); background: var(--panel); min-width: 0; }
+  .timeline .refs { display: flex; gap: 6px; }
+  .timeline .track { position: relative; flex: 1; min-width: 120px; height: 64px; margin: 0 28px; border-bottom: 1px solid #333; }
+  .timeline .tick { position: absolute; bottom: -17px; transform: translateX(-50%); white-space: nowrap; font-size: 10px; color: var(--dim); }
+  .card { position: relative; width: 56px; height: 56px; padding: 0; border-radius: 10px; border: 1px dashed #3a3a3a; background: #111 center/cover;
+          display: grid; place-items: end center; color: var(--dim); font-size: 10px; overflow: hidden; }
+  .track .card { position: absolute; top: 2px; transform: translateX(-50%); }
+  .card:not(.has)::before { content: '＋'; position: absolute; inset: 0 0 14px; display: grid; place-items: center; font-size: 20px; color: var(--amber); }
+  .card.has { border-style: solid; border-color: #ffffff40; color: var(--ink); }
+  .card.over { border-color: var(--amber); }
+  .card span { width: 100%; padding: 1px 2px; background: #000a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .chip { position: absolute; top: 3px; left: 3px; right: auto; width: auto; padding: 0 5px; border-radius: 999px; color: var(--amber); }
+
+  /* The words: the hero control, a composer centred under the picture; its pictures above, its template and size below. */
+  .bar { display: flex; justify-content: center; padding: 6px 16px 14px; min-width: 0; }
+  .composer { display: flex; flex-direction: column; gap: 6px; width: min(980px, 100%); min-width: 0; padding: 8px; border-radius: 20px; background: #101010;
+              border: 1px solid var(--edge); box-shadow: 0 10px 40px #0009; transition: border-color .16s var(--ease); }
+  .composer:focus-within { border-color: color-mix(in srgb, var(--amber) 55%, transparent); }
+  .media { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 2px 2px 0; }
+  .media:has(> .tray:is(:empty, [hidden])):has(> #libbtn[hidden]):has(> #strength[hidden]) { display: none; }
+  textarea { display: block; width: 100%; min-width: 0; resize: none; min-height: 52px; max-height: 32vh; field-sizing: content; padding: 8px 10px; border: 0;
+             background: transparent; color: var(--ink); font: inherit; font-size: 18px; line-height: 1.4; letter-spacing: -.01em; }
+  textarea::placeholder { color: var(--faint); }
+  textarea:focus, textarea:focus-visible { outline: none; }
+  .opts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
+  #template { flex: 0 1 250px; max-width: 100%; font-weight: 500; }
+  #model { flex: 0 1 200px; }
+  .opts .chips { flex: 1 1 auto; min-width: 0; }
+  #settings { margin-left: auto; }
+  #libbtn { height: 30px; font-size: 12px; }
+  .tray { display: flex; gap: 6px; flex-wrap: wrap; }
+  .slot { position: relative; display: inline-flex; }
+  .slot .pick { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px 0 4px; font-size: 12px; }
+  .slot .pick:not(.has) { padding-left: 10px; border-style: dashed; color: var(--dim); }
+  .slot .pick img { width: 24px; height: 24px; object-fit: cover; border-radius: 6px; }
+  .slot .pick.over { border-color: var(--amber); }
+  .slot .pick .role { font-style: normal; color: var(--amber); font-size: 11px; }
+  .slot .unpick { width: 24px; height: 24px; padding: 0; margin-left: -4px; align-self: center; font-size: 12px; border-radius: 50%; }
+  #strength { display: inline-flex; align-items: center; gap: 6px; color: var(--dim); font-size: 12px; }
+
+  /* The snapshot tree: a filmstrip along the foot; branches take a lane each. */
+  .tree { display: flex; align-items: stretch; gap: 8px; max-height: 118px; min-width: 0; border-top: 1px solid var(--line); background: var(--panel); }
+  .tree .tools { display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 8px 0 8px 14px; }
+  .tree .tools button { height: 26px; font-size: 12px; padding: 0 10px; color: var(--dim); }
+  .lanes-wrap { flex: 1; min-width: 0; overflow: auto; scrollbar-width: thin; }
+  .lanes { position: relative; min-height: 60px; }
+  .lanes .hint { margin: 20px 6px; color: var(--faint); font-size: 12px; }
+  .lanes svg { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; stroke: #ffffff26; stroke-width: 1.5; }
+  .node { position: absolute; width: 40px; height: 40px; padding: 0; transform: translate(-50%, -50%); border-radius: 8px;
+          background: #1a1a1a center/cover; border: 1px solid #ffffff30; }
+  .node:hover { background-color: #222; border-color: #ffffff70; }
+  .node.auto { width: 30px; height: 30px; border-radius: 50%; opacity: .7; }
+  .node.head { outline: 2px solid var(--amber); outline-offset: 1px; opacity: 1; }
+  .node.sel { outline: 2px dashed var(--amber); outline-offset: 3px; }
+  .node.clip::after { content: '▶'; position: absolute; right: 2px; top: 1px; font-size: 9px; color: var(--amber); text-shadow: 0 1px 2px #000; }
+  .dlhover { position: fixed; z-index: 20; width: 22px; height: 22px; padding: 0; font-size: 12px; line-height: 20px; background: #000d; border-radius: 6px; }
+
+  /* Sheets: the library on the left, settings on the right; out of the way until opened. */
+  .lib, .drawer { position: fixed; top: 0; bottom: 0; z-index: 10; overflow: auto; padding: 18px 18px 24px; background: #0e0e0ef2; backdrop-filter: blur(24px); }
+  .lib { right: 0; width: min(380px, 100vw); border-left: 1px solid var(--line); }
+  .drawer { right: 0; width: min(360px, 100vw); border-left: 1px solid var(--line); }
+  .lib h2, .drawer h2 { margin: 2px 0 16px; font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+  .lib .close, .drawer .close { position: absolute; top: 14px; right: 14px; height: 30px; }
+  .lib .find { display: flex; gap: 6px; margin-bottom: 12px; }
+  .lib .find input { flex: 1; }
+  .libgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+  .libgrid button { height: auto; aspect-ratio: 1; padding: 0; border-radius: 8px; overflow: hidden; background: #111 center/cover; }
+  .drawer h3 { margin: 22px 0 10px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 11px; font-weight: 600; color: var(--faint);
+               text-transform: uppercase; letter-spacing: .07em; }
+  .drawer .row, .tune > label, .tune .knobs label { display: grid; grid-template-columns: 1fr auto; gap: 6px; margin: 0 0 14px; color: var(--dim); font-size: 12px; }
+  .drawer label > span { color: var(--ink); }
+  .drawer label > :is(input:not([type=checkbox]), select) { grid-column: 1 / -1; }
+  .drawer .row.switch { display: flex; align-items: center; gap: 8px; }
+  .drawer input[type=range] { width: 100%; }
+  .tune .chips { display: flex; margin: 0 0 14px; }
+  .tune .lbl { margin: 0 0 6px; color: var(--dim); font-size: 12px; }
+  .rail h2:has(+ .split[hidden]) { display: none; }
+  .tune .knobs { display: grid; }
+  #seedv { width: 100%; }
+  .framed #libbtn, .framed .lib, .framed #keep { display: none !important; }
+  .framed #template, .framed .drawer .tpl { display: none !important; }
+  .framed .brand { visibility: hidden; }
+
+  /* Wide: the view gives back the rail's width on its right, so the picture centres on the page under the status line. */
+  @media (min-width: 1100px) { .view { padding-right: 168px; } .next { right: 184px; } }
+  /* Narrow: the rail becomes a row of tools under the picture; the meter and key hints step aside. */
+  @media (max-width: 720px) {
+    .stage { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; grid-template-areas: "top" "view" "rail"; }
+    .top { grid-template-columns: auto minmax(0, 1fr); padding: 10px 12px 2px; }
+    .hudline { justify-self: end; }
+    .meter { display: none; }
+    .rail { flex-direction: row; width: auto; gap: 4px; padding: 5px 12px 6px; overflow-x: auto; }
+    .rail h2 { display: none; }
+    .wide { display: none; }
+    #dl { width: 32px; padding: 0; }
+    .rail button { width: auto; height: 32px; padding: 0 11px; border-color: var(--edge); background: #ffffff0a; }
+    .rail button::after { content: none; }
+    .split { flex-wrap: nowrap; gap: 2px; }
+    .split button { width: 32px; flex: none; }
+    .frame { --cap: 42px; width: min(100cqw - 20px, (100cqh - 12px - var(--cap)) * var(--grid)); }
+    .bar { padding: 4px 8px 8px; }
+    .composer { padding: 6px; border-radius: 16px; }
+    textarea { font-size: 16px; min-height: 44px; }
+    #template { flex: 1 1 0; order: -2; }
+    #model { order: -2; }
+    #settings { order: -1; margin-left: 0; }
+    .opts .chips { order: 1; flex: 1 1 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; mask-image: linear-gradient(to right, #000 85%, transparent); }
+    .rail { mask-image: linear-gradient(to right, #000 85%, transparent); }
+    .tree { max-height: 92px; }
+    .lib, .drawer { width: 100vw; }
+  }
+  @media (max-height: 640px) { .rail h2 { display: none; } .rail button { height: 30px; } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; animation: none !important; }
+    .frame > img { filter: none !important; }
+    .glow { display: none; }
+  }
+</style>
+</head>
+<body>
+<main class="stage" id="stage">
+  <canvas class="glow" id="glow" width="32" height="32"></canvas>
+  <header class="top">
+    <h1 class="brand">Vorpal<span>Fusion</span></h1>
+    <div class="hudline">
+      <p class="status" id="status">Connecting…</p>
+      <p class="meter" id="meter" title="The GPU: ms per step on this card, whether the model ran resident, and who is ahead"></p>
+      <button type="button" id="hudbtn" aria-pressed="false" aria-controls="hud" title="Timings">i</button>
+      <div class="pulse" id="pulse"></div>
+    </div>
+    <p class="hud" id="hud" hidden></p>
+  </header>
+  <nav class="rail" aria-label="Tools">
+    <h2>Shape</h2>
+    <button type="button" id="boxbtn" hidden aria-pressed="false" data-key="O" aria-keyshortcuts="O" title="Box tool (O): draw a box on the picture and name what goes there; drag or resize it, every move renders; H hides the boxes">Box</button>
+    <button type="button" id="pinbtn" hidden aria-pressed="false" data-key="P" aria-keyshortcuts="P" title="Pin (P): draw a region of the picture that stays exactly as it is while the words change the rest; Esc or P again unpins">Pin</button>
+    <button type="button" id="flowbtn" hidden aria-pressed="false" data-key="W" aria-keyshortcuts="W" title="Flow (W): each live picture starts from the last one, so the picture bends with every word instead of re-rendering">Flow</button>
+    <button type="button" id="refbtn" data-key="F" aria-keyshortcuts="F" title="Pin as reference (F): the picture on stage becomes the reference; a template with no picture slot switches to its family's edit template">As reference</button>
+    <button type="button" id="lock" aria-pressed="false" data-key="L" aria-keyshortcuts="L" title="Lock the composition at a middle step: new words change only the detail (L)">Lock</button>
+    <h2>Seed</h2>
+    <button type="button" id="seeds" data-key="G" aria-keyshortcuts="G" title="The seed field (G)" aria-haspopup="dialog">Seeds</button>
+    <button type="button" id="reroll" data-key="R" aria-keyshortcuts="R" aria-label="New seed" title="New seed (R, ⌘R); ⌥← ⌥→ step it">New seed</button>
+    <h2>Keep</h2>
+    <button type="button" class="pin" id="pin" data-key="S" aria-keyshortcuts="S" aria-label="Take a snapshot (S)" title="Take a snapshot (S)">Snapshot</button>
+    <h2>Panels</h2>
+    <span class="split" id="split" hidden role="group" aria-label="Panels"><button type="button" data-n="1" aria-pressed="true">1</button><button type="button" data-n="2" aria-pressed="false">2</button><button type="button" data-n="4" aria-pressed="false">4</button></span>
+  </nav>
+  <div class="view" id="view">
+    <p class="empty" id="empty">Type to see it develop · drop a picture to start from it</p>
+    <div class="frame" id="frame">
+      <img id="a" alt=""><img id="b" class="back" alt="">
+      <video id="va" class="back" muted loop playsinline></video><video id="vb" class="back" muted loop playsinline></video>
+      <div class="cells" id="cells"></div>
+      <div class="boxes" id="boxes" aria-label="Layout boxes"></div>
+      <img id="compare" alt="" hidden>
+      <div class="cap">
+        <span class="tag" id="tag"></span>
+        <div class="ladder" role="group" aria-label="Ladder">
+          <span class="rung" id="rung" title="The rung on stage: Live, Settled, Final, 2K, 4K"></span>
+          <button type="button" id="grad" hidden aria-keyshortcuts="U" title="Graduate (U): the next rung of this picture, same words, seed and pictures, more fidelity, in the background">▲ Final</button>
+          <button type="button" id="enrich" hidden aria-keyshortcuts="E" title="Final with the template's prompt enhancer rewriting the words (E)">Enrich</button>
+          <button type="button" id="readbtn" hidden aria-pressed="false" aria-controls="read" title="How the enhancer rewrote the words">Read</button>
+          <button type="button" id="keep" hidden aria-keyshortcuts="K" title="Keep the highest rung of this picture (K)">Keep</button>
+          <button type="button" id="dl" hidden aria-keyshortcuts="D" aria-label="Download this picture (D)" title="Download this picture at its rung, the original with its workflow (D)">⤓<span class="wide"> Download</span></button>
+          <button type="button" id="cancel" hidden title="Cancel this clip: nothing renders until you change something">Cancel</button>
+        </div>
+      </div>
+      <div class="scrub" id="scrub" role="slider" tabindex="-1" hidden aria-label="Clip position" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">
+        <div class="track"><div class="fill" id="fill"></div></div><span class="time" id="cliptime"></span>
+      </div>
+      <button type="button" class="vol" id="vol" hidden aria-pressed="false" aria-label="Sound (M)" title="Sound (M)"></button>
+    </div>
+    <div class="next" id="next" aria-hidden="true"><img id="nextimg" alt=""><span id="nextlabel">developing</span></div>
+  </div>
+  <div class="field" id="field" inert aria-label="Seed field">
+    <div class="fieldbar"><span class="chips" id="fieldmode" role="group" aria-label="Field"><button type="button" data-m="seeds" aria-pressed="true">Seeds</button><button type="button" data-m="variations" aria-pressed="false">Variations</button></span>
+      <label id="varyrow" hidden>strength <span id="varyv">0.4</span><input id="vary" type="range" min="0.1" max="0.8" step="0.05" value="0.4" aria-label="Variation strength"></label></div>
+    <div class="grid" id="grid"></div></div>
+  <div class="ab" id="ab" hidden role="dialog" aria-label="Side by side">
+    <figure><img id="abA" alt=""><figcaption id="abAc"></figcaption></figure>
+    <figure><img id="abB" alt=""><figcaption id="abBc"></figcaption></figure>
+    <button type="button" id="abclose">Close</button>
+  </div>
+  <aside class="read" id="read" hidden aria-label="What the model read">
+    <h3>You wrote</h3><p id="wrote"></p>
+    <h3>The model read</h3><p id="modelread"></p>
+    <button type="button" class="use" id="usewords" title="Put the words the model read in the box">Use these words</button>
+  </aside>
+  <p class="sr" id="say" role="status" aria-live="polite"></p>
+</main>
+<section class="timeline" id="timeline" hidden aria-label="Clip timeline: pictures at their moments">
+  <div class="refs" id="refs"></div>
+  <div class="track" id="track"></div>
+</section>
+<form class="bar" onsubmit="return false">
+  <div class="composer">
+    <div class="media">
+      <div class="tray" id="tray" aria-label="Pictures"></div>
+      <button type="button" id="libbtn" hidden aria-controls="lib" aria-expanded="false" title="Saddle's library: drag a result onto a picture slot or the stage">Library</button>
+      <input id="file" type="file" accept="image/*" hidden>
+      <label id="strength" hidden>change <span id="stv">0.6</span><input id="st" type="range" min="0.2" max="1" step="0.05" value="0.6" aria-label="Change"></label>
+    </div>
+    <label class="sr" for="prompt">Words</label>
+    <textarea id="prompt" placeholder="Say what you see…" autofocus></textarea>
+    <div class="opts">
+      <select id="template" aria-label="Template"></select>
+      <select id="model" hidden aria-label="Model" title="Model: the template's own, or a fine-tune of its model file"></select>
+      <span id="size" class="chips"></span>
+      <button type="button" id="settings" aria-controls="drawer" aria-expanded="false">Settings</button>
+    </div>
+  </div>
+</form>
+<nav class="tree" id="tree" aria-label="Snapshots" hidden>
+  <div class="tools">
+    <button type="button" id="export" title="Save the snapshot tree as a file">Export</button>
+    <button type="button" id="import" title="Load a snapshot tree from a file">Import</button>
+    <button type="button" id="dlsel" hidden title="Download the selected snapshots as one zip with a manifest (shift-click or X selects)">Download</button>
+    <input id="importfile" type="file" accept="application/json,.json" hidden>
+  </div>
+  <div class="lanes-wrap" id="laneswrap"><div class="lanes" id="lanes"></div></div>
+</nav>
+<button type="button" class="dlhover" id="dlhover" hidden aria-label="Download (D)" title="Download this picture at its rung (D)">⤓</button>
+<aside class="lib" id="lib" hidden aria-label="Saddle's library">
+  <h2>Library</h2>
+  <button type="button" class="close" id="libclose">Close</button>
+  <div class="find"><input type="text" id="libq" placeholder="Search the library" aria-label="Search the library"><select id="libboard" aria-label="Board"><option value="">All results</option></select></div>
+  <div class="libgrid" id="libgrid"></div>
+</aside>
+<aside class="drawer" id="drawer" hidden aria-label="All settings">
+  <h2>Settings</h2>
+  <button type="button" class="close" id="drawerclose">Close</button>
+  <div class="tune">
+    <p class="lbl">Speed</p>
+    <span class="chips" id="speed" role="group" aria-label="Speed" title="Speed: each live picture in about 250, 400 or 700 ms on this GPU (auto: the template's live profile)">
+      <button type="button" data-s="" aria-pressed="true">auto</button><button type="button" data-s="snappy" aria-pressed="false">snappy</button><button type="button" data-s="balanced" aria-pressed="false">balanced</button><button type="button" data-s="pretty" aria-pressed="false">pretty</button></span>
+    <label>Live steps <span id="lpv">auto</span><input id="lp" type="range" min="0" max="8" value="0" aria-label="Live steps"></label>
+    <label>Seed <input id="seedv" type="number" min="0" step="1" aria-label="Seed"></label>
+    <span id="tknobs" class="knobs"></span>
+  </div>
+  <div class="tpl">
+    <h3>Template</h3>
+    <label class="row switch"><input type="checkbox" id="plumbing"> Show node plumbing</label>
+    <div id="controls"></div>
+  </div>
+</aside>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (text) => String(text ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const framed = window.parent !== window;
+const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+// Storage is unavailable in an opaque-origin sandbox: everything then lives for the session only.
+const store = (() => { try { const s = window.localStorage; s.setItem('gv.probe', '1'); s.removeItem('gv.probe'); return s; } catch { return null; } })();
+const load = (key, fallback) => { try { return JSON.parse(store?.getItem(key) ?? 'null') ?? fallback; } catch { return fallback; } };
+const save = (key, value) => { try { store?.setItem(key, JSON.stringify(value)); return true; } catch { return false; } };
+const hostOrigin = (() => { try { return new URL(document.referrer).origin; } catch { return '*'; } })();
+function tell(type, data = {}) { if (framed) parent.postMessage({ source: 'gpu-vision', type, ...data }, hostOrigin === 'null' ? '*' : hostOrigin); }
+window.gvLog = [];  // displayed frames {t, v, kind, stage}, for checks
+
+// The turn: what the sidecar renders.
+const saved = load('gv.state', {});
+let templates = [], profile = null, template = saved.template || '';
+let seed = saved.seed ?? Math.floor(Math.random() * 2 ** 31), values = saved.values || {}, sources = saved.sources || [];
+let aspect = saved.aspect || 1, liveOn = !framed, hostBusy = false, timer = 0;
+let panels = saved.panels || 1, panel = null, panelSet = null;  // split panels: how many, the one picked (it settles), the batch on stage
+let v = Date.now(), sentV = 0, epochV = v, shownV = -1, settledV = -1;  // nothing from before this page is current
+const thumbs = {}, rels = {};  // picture id -> displayable URL; Saddle library rel -> picture id
+$('prompt').value = saved.prompt || ''; $('st').value = saved.strength ?? 0.6; $('stv').textContent = $('st').value;
+
+// Words go out on a word boundary: while a word is being typed (the caret at the end, a key in the
+// last 250 ms) the words stop before it (except the first word, so the first frame waits for nothing), so no job is spent on a fragment the encoder cannot read;
+// the whole text goes out once the keys rest 250 ms, and the settle then waits less (the words
+// already rested).
+const WORD_REST = 250;
+let typedAt = -1e9, sentWords = null, sentTyping = false, restTimer = 0, restSend = false;
+// Fast typing (keys under 120 ms apart) renders one size smaller until the first pause; the speed dial sets the target.
+const FAST_KEYS = 120;
+let fastKeys = false, speed = saved.speed || '', ahead = null;
+// Step lock, the seed field's mode, a picked variation, and what speculation should render ahead.
+let lock = null, fieldMode = saved.field || 'seeds', variation = null, lastKnob = null, graduated = 0;
+// Layout boxes ([ymin, xmin, ymax, xmax] on 0-1000 with a word each), the pin ({id, rect}: a picture and the region of it that
+// stays), the tool drawing on the stage ('box' | 'pin'), and whether the overlay is hidden (H).
+let boxes = saved.boxes || [], pinned = null, tool = null, boxesOff = false;
+// Flow (W): each live frame starts from the last one's latent, re-noised by how much the words changed.
+let flowOn = !!saved.flow, flowKind = null;
+let model = saved.model || null;  // a fine-tune of the template's model file, by label (null: the template's own)
+const FLOW_WORDS = { reset: 'fresh start', same: 'same words', word: 'a word', phrase: 'a phrase' };
+function words() {
+  const box = $('prompt'), text = box.value;
+  if (performance.now() - typedAt >= WORD_REST || document.activeElement !== box || box.selectionEnd !== text.length) return text;
+  if (/[\s,.;:!?]$/.test(text)) return text.trimEnd();  // a word just ended
+  const m = text.match(/^([\s\S]*[\s,.;:!?])[^\s,.;:!?]+$/);
+  return m ? m[1].trimEnd() : text;  // the first word goes out as it is typed: the first frame waits for nothing
+}
+function turn() {
+  return { v: sentV, template, prompt: words(), seed, values, sources, strength: +$('st').value, aspect,
+           live_steps: +$('lp').value || null, rest_ms: restSend ? 200 : 450, speed: speed || undefined,
+           fast: fastKeys && performance.now() - typedAt < WORD_REST || undefined, lock: lock || undefined,
+           field: fieldMode, vary_strength: +$('vary').value, variation: variation || undefined, knob: lastKnob || undefined,
+           likely: graduated > 0 || undefined, panels: splitOn() ? panels : undefined, boxes: layoutBoxes(), pin: pinOn() ? pinned : undefined, flow: flowOn && profile?.flow || undefined, model: model || undefined,
+           panel: splitOn() ? panel ?? undefined : undefined,
+           typing: performance.now() - typedAt < WORD_REST || undefined };  // mid-sentence: live only, no settle yet
+}
+function persist() { save('gv.state', { template, prompt: $('prompt').value, seed, values, sources, strength: +$('st').value, aspect, panels, speed, field: fieldMode, boxes, flow: flowOn, model }); }
+const layoutBoxes = () => profile?.layout && boxes.some((b) => b.desc.trim()) ? boxes.filter((b) => b.desc.trim()).map((b) => ({ bbox: b.bbox, desc: b.desc.trim() })) : undefined;
+const pinOn = () => !!(profile?.pin && pinned);
+const splitOn = () => panels > 1 && !!profile?.panels;
+let dog = 0, heardAt = 0;
+async function send() {
+  sentV = v = Math.max(v + 1, Date.now());  // a clock, so a job from before a reload never reads as current
+  if (keyAt !== null && keyFromV === null) keyFromV = sentV;
+  const state = turn(); restSend = false; sentWords = state.prompt; sentTyping = !!state.typing;
+  // The watchdog: words that changed and got neither a frame nor a phase within 1.5 s say so.
+  clearTimeout(dog);
+  dog = setTimeout(() => { if (liveOn && shownV < sentV && performance.now() - heardAt > 1400 && !QUIET.includes(ph) && ph !== 'loading') phase('waiting'); }, 1500);
+  persist();
+  tell('state', { state: { ...state, sources: sources.map((s) => ({ ...s, rel: relOf(s.id) })) } });
+  document.body.classList.remove('settled');
+  stageRung = profile?.kind === 'video' ? 'draft' : 'live'; ladderControls(); layoutPanels();
+  stale();
+  if (!liveOn) return phase('idle');
+  if (!hostBusy && profile) await post('state', JSON.stringify(state));
+}
+function soon() { panel = null; variation = null; clearTimeout(timer); timer = setTimeout(send, 60); keyAt ??= performance.now(); }
+function typed() {
+  fastKeys = performance.now() - typedAt < FAST_KEYS;
+  typedAt = performance.now(); keyAt ??= typedAt; panel = null; variation = null;
+  clearTimeout(timer); clearTimeout(restTimer);
+  if (words() !== sentWords) timer = setTimeout(send, 60);
+  restTimer = setTimeout(() => { if (words() !== sentWords || sentTyping) { restSend = true; send(); } }, WORD_REST);
+}
+const relOf = (id) => Object.keys(rels).find((rel) => rels[rel] === id);
+
+async function call(path, init) {
+  try {
+    const r = await fetch(path, init);
+    if (r.status >= 500) phase('failed', { message: `VorpalFusion's sidecar could not do that (HTTP ${r.status}). Try again in a moment.` });
+    return r;
+  } catch { phase('offline'); return null; }
+}
+const post = (path, body, headers) => call(path, { method: 'POST', body, headers });
+
+// One plain status line; failures read as a sentence with what to do.
+let ph = '', lastLive = null, lastJob = null, keyToFrame = null, keyAt = null, keyFromV = null;
+const loadTimes = load('gv.loads', {});
+const QUIET = ['failed', 'busy', 'offline', 'idle', 'needs', 'waiting', 'canceled'];
+function phase(name, extra = {}) {
+  const mp = +(profile?.megapixels ?? 1).toFixed(1);
+  const seconds = (ms) => `${(ms / 1000).toFixed(1)} s`;
+  const text = {
+    loading: () => `Loading ${extra.title || profile?.title || 'the template'}${loadTimes[template] ? ` · ~${Math.max(1, Math.round(loadTimes[template] / 1000))} s` : '…'}`,
+    needs: () => !extra.label || extra.label === 'source' ? 'Drop a picture to edit' : `Drop a picture for the ${extra.label}`,
+    idle: () => !liveOn ? 'Live is off' : 'Type to see it develop',
+    live: () => flowOn && profile?.flow ? `Flow${flowKind ? ` · ${FLOW_WORDS[flowKind] || flowKind}` : ''}${lastLive ? ` · ${Math.round(lastLive)} ms` : ''}${pinOn() ? ' · pinned' : ''}` : pinOn() ? `Pinned · typing changes the rest${lastLive ? ` · ${seconds(lastLive)}` : ''}` : lock ? `Composition locked at step ${lock.step} of ${lock.of}${lastLive ? ` · ${seconds(lastLive)}` : ''}` : lastLive ? `Live · ${seconds(lastLive)}` : 'Live',
+    refining: () => `Refining ${extra.step}/${extra.steps}`,
+    finishing: () => profile?.kind === 'video' ? 'Finishing (decoding the clip)' : `Finishing (decoding ${mp} MP)`,
+    settled: () => profile?.kind === 'video' ? `Full clip · made in ${seconds(extra.ms)} · its motion can differ from the draft` : `Settled · ${seconds(extra.ms)}`,
+    queued: () => `${RUNG_NAMES[extra.rung]} · ${extra.ahead ? `${extra.ahead} ahead` : 'next when the GPU rests'}`,
+    climbing: () => extra.steps ? `${RUNG_NAMES[extra.rung]} ${extra.step}/${extra.steps}` : `Graduating to ${RUNG_NAMES[extra.rung]}…`,
+    graduated: () => `${RUNG_NAMES[extra.rung]} · ${seconds(extra.ms)}${extra.size ? ` · ${extra.size.join('×')}` : ''}`,
+    kept: () => extra.path ? `Kept · ${extra.path.split('/').pop()}` : 'Sent to Saddle to keep',
+    downloaded: () => `Downloaded · ${extra.name}`,
+    downloading: () => 'Downloading…',
+    keeping: () => 'Keeping…',
+    canceled: () => 'Canceled · change anything to render again',
+    busy: () => extra.owner === 'gpu-vision' ? `Waiting for another VorpalFusion · ${extra.ahead} ahead` : `GPU shared · ${extra.ahead} ahead`,
+    waiting: () => extra.why === 'loading' ? `Loading ${extra.title || profile?.title || 'the template'}…` : 'Waiting on the GPU',
+    offline: () => 'Offline: reconnecting',
+    failed: () => extra.message || 'Something failed without saying why. Change the words or settings to try again.',
+  }[name]();
+  const changed = name !== ph;
+  ph = name;
+  $('status').textContent = text; $('status').className = `status ${name}`; $('status').title = extra.detail || '';
+  if (changed) { $('say').textContent = text; tell('status', { phase: name, text, key_to_frame_ms: keyToFrame, last_job_ms: lastJob }); }
+  if (name === 'needs') {  // a picture slot to fill: a button on the stage, as well as a drop target
+    const slot = (profile?.media.find((m) => m.label === extra.label) || profile?.media[0])?.address;
+    $('empty').innerHTML = `<button type="button" class="addpic" data-slot="${esc(slot || '')}">＋ ${esc(extra.label && extra.label !== 'source' ? `Add the ${extra.label}` : 'Add a picture')}</button><br>or drop it here`;
+  }
+  stale();
+}
+// The page never shows a frame from older words as current: a picture from before the template
+// or pictures changed, or one whose words moved on while nothing renders, is dimmed and labelled.
+function stale() {
+  const old = shownV >= 0 && (shownV < epochV || (shownV < sentV && QUIET.includes(ph)));
+  $('stage').classList.toggle('stale', old);
+  if (!$('compare').hidden) return;
+  $('tag').textContent = old ? 'older picture' : '';
+}
+function hud() {
+  const per = timeline.msPerStep();
+  $('hud').textContent = `key to first frame ${keyToFrame ?? '–'} ms · last job ${lastJob ?? '–'} ms${per ? ` · ${per} ms/step` : ''}`
+    + (timeline.at !== null ? ` · step ${timeline.at + 1} of ${timeline.frames.length} (← →)` : '');
+}
+// The GPU meter: ms per step on this card (from Live-on's calibration), whether the last live job ran resident or the
+// model was partly offloaded (slower than calibrated), and who is ahead in the GPU's queue.
+let lastMeter = null;
+function meter() {
+  const m = lastMeter, who = ahead ? (ahead.owner === 'gpu-vision' ? `another VorpalFusion · ${ahead.ahead} ahead` : `${ahead.ahead} ahead`) : 'nobody ahead';
+  const parts = m ? [m.ms_per_step ? `${m.ms_per_step} ms/step` : `${m.ms} ms`, m.resident == null ? null : m.resident ? 'resident' : 'partly offloaded',
+    m.steps != null ? `${m.steps} steps` : null, m.mp != null ? `${m.mp} MP` : null] : [];
+  $('meter').textContent = m || ahead ? ['GPU', ...parts.filter(Boolean), who].join(' · ') : '';
+  $('meter').classList.toggle('off', !!ahead || m?.resident === false);
+}
+$('speed').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  speed = b.dataset.s; for (const x of $('speed').querySelectorAll('button')) x.setAttribute('aria-pressed', x === b);
+  persist(); soon();
+});
+for (const x of $('speed').querySelectorAll('button')) x.setAttribute('aria-pressed', x.dataset.s === speed);
+
+// The step timeline: every step preview of the job on stage is kept; ← and → (outside the words) walk
+// through them, and the next frame that lands returns the stage to live.
+const timeline = {
+  frames: [], steps: [], key: null, at: null,
+  step(f) { if (`${f.stage}|${f.v}` !== this.key) this.reset(f); this.steps.push(f.ms); this.at = null; },
+  frame(f) {
+    if (f.kind !== 'frame') return;
+    if (`${f.stage}|${f.v}` !== this.key) this.reset(f);
+    this.frames.push(f.src); this.at = null;
+  },
+  reset(f) { this.key = `${f.stage}|${f.v}`; this.frames = []; this.steps = []; this.at = null; },
+  msPerStep() { const d = this.steps.slice(1).map((ms, i) => ms - this.steps[i]).sort((a, b) => a - b); return d.length ? d[d.length >> 1] : null; },
+  walk(by) {
+    if (!this.frames.length) return;
+    this.at = Math.max(0, Math.min(this.frames.length - 1, (this.at ?? this.frames.length - 1) + by));
+    show(this.frames[this.at], 0); hud();
+  },
+};
+$('hudbtn').addEventListener('click', () => {
+  const on = $('hud').hidden; $('hud').hidden = !on; $('hudbtn').setAttribute('aria-pressed', on); hud();
+});
+
+// The stage.
+let front = $('a'), back = $('b'), vfront = $('va'), vback = $('vb');
+const glow = $('glow').getContext('2d');
+const clampAspect = (value) => Math.min(3, Math.max(1 / 3, value || 1));
+function setAspect(value) { aspect = clampAspect(value); document.documentElement.style.setProperty('--aspect', aspect); }
+function show(src, blur, fv) {
+  if (fv !== undefined) shownV = fv;
+  for (const el of [vfront, vback]) el.classList.add('back');
+  const words = $('prompt').value.trim();
+  back.onload = () => {
+    back.style.filter = blur && !reduced.matches ? `blur(${blur}px)` : '';
+    back.alt = words || 'the source picture';
+    back.classList.remove('back'); front.classList.add('back'); front.alt = '';
+    [front, back] = [back, front];
+    try { glow.drawImage(front, 0, 0, 32, 32); } catch {}  // a 32 px canvas: no image resource per frame
+  };
+  back.src = src;
+  $('empty').hidden = true;
+  stale();
+}
+// A new clip flows into the loop at the playing clip's playhead and cross-fades over 280 ms.
+function flow(src, fv) {
+  if (fv !== undefined) shownV = fv;
+  const playing = !vfront.classList.contains('back') && vfront.src;
+  const at = playing ? vfront.currentTime : 0;
+  vback.muted = !soundOn;
+  vback.src = src;
+  hasSound(src).then((sound) => { if (vfront.src === src || vback.src === src) { clipHasSound = sound; paintSound(); } });
+  vback.onloadedmetadata = () => {
+    setAspect(vback.videoWidth / vback.videoHeight);
+    vback.currentTime = at % (vback.duration || 1);
+    vback.play().catch(() => {});  // a newer clip, or a pause, may interrupt it
+    vback.setAttribute('aria-label', $('prompt').value.trim() || 'clip');
+    vback.classList.remove('back'); vfront.classList.add('back');
+    for (const i of [front, back]) i.classList.add('back');
+    const old = vfront; setTimeout(() => old.pause(), 300);
+    [vfront, vback] = [vback, vfront];
+  };
+  $('empty').hidden = true;
+  stale();
+}
+
+// Compare is an overlay above the stage: holding B (or hovering a snapshot) shows it; the stage is never touched.
+function showCompare(snap) {
+  const src = snap && (frames[snap.id] || snap.thumb);
+  if (!src || snap.id === head || /^data:video|\.(mp4|webm)(\?|$)/.test(src)) return;  // nothing to show, or it is what the stage plays
+  $('compare').onerror = hideCompare;
+  $('compare').src = src; $('compare').alt = ''; $('compare').hidden = false;
+  $('tag').textContent = label(snap);
+}
+function hideCompare() { $('compare').hidden = true; $('compare').removeAttribute('src'); stale(); }
+
+// The frame stream: reconnects with backoff and resends the page's state when it is back.
+let es = null, backoff = 1000, retry = 0;
+function connect() {  // one stream, one pending retry: 'online' and the backoff never race
+  clearTimeout(retry); es?.close();
+  es = new EventSource('frames');
+  es.onopen = () => { backoff = 1000; if (ph === 'offline') phase(liveOn ? 'waiting' : 'idle'); resync(); };
+  es.onerror = () => { es.close(); phase('offline'); clearTimeout(retry); retry = setTimeout(connect, backoff); backoff = Math.min(backoff * 2, 8000); };
+  es.onmessage = (message) => onFrame(JSON.parse(message.data));
+}
+addEventListener('offline', () => phase('offline'));
+addEventListener('online', connect);
+
+function onFrame(f) {
+  if (f.kind === 'rung' || f.stage === 'rung') return onRung(f);  // the ladder climbs snapshots, whatever is on stage now
+  if (f.kind === 'enhanced') return showRead(f);
+  if (f.v != null && f.v < epochV) return;  // made for an older template or picture (or page): dropped
+  heardAt = performance.now();
+  if (f.kind === 'panels') { panelSet = f; paintPanels(); return; }
+  if (f.kind === 'phase') { if (f.phase === 'canceled') { $('cancel').hidden = true; $('next').classList.remove('on'); } return phase(f.phase, f); }
+  if (f.kind === 'loaded') { loadTimes[f.template] = f.ms; save('gv.loads', loadTimes); return; }
+  if (f.kind === 'busy') { ahead = f; meter(); return phase('busy', f); }
+  if (f.kind === 'meter') { lastMeter = f; ahead = null; return meter(); }
+  if (f.kind === 'calibrated') { $('say').textContent = `Calibrated on this GPU: ${f.per_step_mp} ms per step per megapixel`; return; }
+  if (f.kind === 'error') { phase('failed', f); return; }
+  if (f.kind === 'seed') { if (f.v === settledV) { field.push({ seed: f.seed, src: f.src }); paintField(); } return; }
+  if (f.kind === 'variations') {
+    if (f.v === settledV) { field = [field[0], ...f.srcs.map((src, index) => ({ seed: f.seed, index, strength: f.strength, count: f.srcs.length, src }))]; paintField(); }
+    return;
+  }
+  if (f.kind === 'step') {
+    timeline.step(f);
+    $('pulse').style.width = `${100 * f.step / f.steps}%`; $('nextlabel').textContent = `developing ${f.step}/${f.steps}`;
+    if (f.stage === 'settle') phase(f.step >= f.steps ? 'finishing' : 'refining', f);
+    else if (ph !== 'live') phase('live');
+    return;
+  }
+  if (profile?.kind === 'video' && f.kind === 'frame') {  // a clip's step previews: on the stage until a clip plays, with Cancel
+    $('nextimg').src = f.src; $('next').classList.add('on'); $('cancel').hidden = false;
+    if (vfront.classList.contains('back') || !vfront.getAttribute('src')) show(f.src, f.ms === f.first ? 4 : 2, f.v);
+  }
+  else if (f.kind === 'final' && f.media === 'video') { $('next').classList.remove('on'); $('cancel').hidden = true; flow(f.src, f.v); }
+  else { timeline.frame(f); show(f.src, f.kind === 'final' ? 0 : f.stage === 'live' && !sources.length ? 6 : 2, f.v); }
+  const now = performance.now();
+  window.gvLog.push({ t: now, v: f.v, kind: f.kind, stage: f.stage }); if (window.gvLog.length > 500) window.gvLog.shift();
+  if (keyFromV !== null && f.v >= keyFromV) { keyToFrame = Math.round(now - keyAt); keyAt = keyFromV = null; }
+  if (f.kind === 'final') lastJob = f.ms;
+  if (f.stage === 'live' && f.flow) flowKind = f.flow;
+  if (f.stage === 'live' && f.kind === 'final') { lastLive = f.ms; stageRung = profile?.kind === 'video' ? 'draft' : 'live'; ladderControls(); }
+  if (f.stage === 'live' && (f.kind === 'final' || ph !== 'live')) phase('live');
+  if (f.kind === 'final' && f.stage === 'settle') settle(f);
+  hud();
+}
+async function settle(f) {
+  settledV = f.v; document.body.classList.add('settled');
+  stageRung = 'settled'; layoutPanels();
+  phase('settled', f);
+  resetField(f.src);
+  const snap = await snapshot(true, f);
+  if (snap) { snap.job = f.job; snap.original = f.original; snap.rung = 'settled'; keepTree(); tell('settled', { snapshot: { ...snap, frame: f.src, original: f.original } }); }
+  ladderControls();
+}
+
+// The ladder: Live → Settled → Final → 2K → 4K (a clip: Draft → Full clip → Final → Smooth). Graduate (U) asks the
+// sidecar for the next rung of a snapshot; it climbs in a lane below live and settle, and each rung lands as a child
+// snapshot, so B and side by side compare one rung with another. Keep (K) keeps the highest rung.
+const RUNGS = { image: ['live', 'settled', 'final', '2k', '4k'], video: ['draft', 'settled', 'final', 'smooth'] };
+const RUNG_NAMES = { live: 'Live', draft: 'Draft', settled: 'Settled', final: 'Final', '2k': '2K', '4k': '4K', smooth: 'Smooth' };
+const RANK = ['live', 'draft', 'settled', 'final', 'smooth', '2k', '4k'];
+const climbing = {};  // snapshot id -> the rung it climbs to
+let stageRung = 'live';
+const rungOf = (s) => s?.rung || (s?.auto ? 'settled' : s?.media === 'video' ? 'draft' : 'live');
+function nextRung(s) {
+  if (!s) return null;
+  const kind = s.media === 'video' ? 'video' : 'image', ladder = RUNGS[kind];
+  let next = ladder[ladder.indexOf(rungOf(s)) + 1] || null;
+  if (next === 'settled') next = 'final';  // a live snapshot climbs straight to Final, which builds its own settle
+  if (kind === 'video' && next === 'final' && !(s.template === template && profile?.enhancer)) next = 'smooth';
+  return next;
+}
+function rungFrom(s, rung) {  // a tool rung climbs from an output the sidecar holds: the Final below (a clip: its own)
+  for (let x = s; x; x = snapOf(x.parent)) if (x.job && (rung === 'smooth' || rungOf(x) === 'final' || !['2k', '4k'].includes(rung))) return x.job;
+  return s.job;
+}
+const stateOf = (s) => ({ v: sentV, template: s.template, prompt: s.prompt, seed: s.seed, values: s.values, sources: s.sources, variation: s.variation,
+                          strength: s.strength, aspect: s.aspect, panels: s.panels > 1 ? s.panels : undefined, panel: s.panels > 1 ? s.panel : undefined,
+                          boxes: s.boxes, pin: s.pin, model: s.model });
+async function graduate(id = head) {
+  const s = snapOf(id), rung = nextRung(s);
+  if (!s || !rung || climbing[id] || !liveOn) return;
+  climbing[id] = rung; graduated++; keepTree(); ladderControls();
+  await post('graduate', JSON.stringify({ id, rung, state: stateOf(s), from: rungFrom(s, rung) }));
+}
+async function onRung(f) {
+  if (f.kind === 'rung') { if (f.phase === 'queued' && f.ahead) phase('queued', f); else phase('climbing', f); return; }
+  if (f.kind === 'error') { delete climbing[f.id]; keepTree(); ladderControls(); return phase('failed', f); }
+  if (f.kind === 'step') { if (ph !== 'live' || !QUIET.includes(ph)) phase('climbing', f); $('pulse').style.width = `${100 * f.step / f.steps}%`; return; }
+  if (f.kind !== 'final') return;
+  delete climbing[f.id];
+  const parent = snapOf(f.id); if (!parent) return keepTree();
+  const snap = { ...parent, id: uid(), parent: parent.id, auto: false, t: Date.now(), rung: f.rung, job: f.job, original: f.original,
+                 size: f.size, media: f.media, recipe: { rung: f.rung, path: f.path, tool: f.tool, multiplier: f.multiplier }, thumb: null };
+  frames[snap.id] = f.src; snaps.push(snap);
+  if (head === parent.id && same(parent, condition())) {  // the creator still looks at it: it sharpens in place
+    head = snap.id; stageRung = f.rung;
+    if (f.media === 'video') flow(f.src, shownV); else show(f.src, 0, shownV);
+  }
+  keepTree(); ladderControls(); phase('graduated', f);
+  snap.thumb = await thumb(f.src, f.media); keepTree();
+}
+function ladderControls() {
+  const s = snapOf(head), current = same(s, condition()) ? s : null, next = nextRung(current);
+  $('rung').textContent = RUNG_NAMES[current ? rungOf(current) : stageRung] || '';
+  $('grad').hidden = !next || !liveOn; $('grad').disabled = !!climbing[current?.id];
+  $('grad').textContent = climbing[current?.id] ? `▲ ${RUNG_NAMES[climbing[current.id]]}…` : `▲ ${RUNG_NAMES[next] || ''}`;
+  $('grad').setAttribute('aria-label', `Graduate to ${RUNG_NAMES[next] || ''} (U)`);
+  $('keep').hidden = !current; $('dl').hidden = !front.getAttribute('src') && !current;
+  $('enrich').hidden = !profile?.enhancer || next !== 'final' || !!climbing[current?.id];
+}
+$('grad').addEventListener('click', () => graduate());
+$('enrich').addEventListener('click', () => graduate());
+const keepTarget = () => { let best = snapOf(head); for (const s of snaps) if (same(s, best) && RANK.indexOf(rungOf(s)) > RANK.indexOf(rungOf(best))) best = s; return best; };
+async function keep() {
+  const s = keepTarget(); if (!s) return phase('failed', { message: 'Nothing to keep yet: type, and let it settle.' });
+  const lineage = lineageOf(s);
+  const sourcesOut = s.sources.map((x) => ({ ...x, rel: relOf(x.id) }));
+  if (framed) {  // Saddle stages the rung's full recipe as a normal plan the creator confirms
+    tell('keep', { recipe: { template: s.template, prompt: s.prompt, seed: s.seed, values: s.values, sources: sourcesOut, strength: s.strength,
+      aspect: s.aspect, panels: s.panels, panel: s.panel, boxes: s.boxes || [], pin: s.pin || null, model: s.model || null, rung: rungOf(s), ladder: s.recipe || null, original: s.original, parent: s.parent, lineage } });
+    return phase('kept', {});
+  }
+  const frame = String(frames[s.id] || '').startsWith('data:') ? frames[s.id] : null;
+  phase('keeping', {});
+  const r = await post('keep', JSON.stringify({ snapshot: { ...s, rung: rungOf(s), sources: sourcesOut, thumb: undefined }, job: s.job, frame, lineage }));
+  if (r?.ok) phase('kept', await r.json()); else if (r) phase('failed', { message: (await r.json().catch(() => ({}))).message || 'VorpalFusion could not keep that picture.' });
+}
+$('keep').addEventListener('click', keep);
+function lineageOf(s) { const out = []; for (let x = s; x; x = snapOf(x.parent)) out.push({ id: x.id, rung: rungOf(x), prompt: x.prompt, seed: x.seed }); return out; }
+
+// Download, apart from Keep: a picture at its rung as the original (the sidecar fetches it from ComfyUI's output; a live
+// picture is its frame), named by its words, seed and rung, a PNG carrying the workflow that made it; several selected
+// snapshots as one zip with a manifest. D downloads what is focused (a tree node, a seed tile) or the stage.
+const itemOf = (s) => ({ snapshot: { ...s, rung: rungOf(s), thumb: undefined, sources: s.sources.map((x) => ({ ...x, rel: relOf(x.id) })) },
+  job: s.job, frame: /^data:/.test(frames[s.id] || '') ? frames[s.id] : s.thumb, lineage: lineageOf(s) });
+function stageItem() {
+  const s = snapOf(head);
+  if (s && same(s, condition())) return itemOf(s);
+  return { snapshot: { ...condition(), rung: stageRung }, frame: front.getAttribute('src'), lineage: [] };
+}
+const tileItem = (one) => ({ snapshot: { ...condition(), seed: one.seed, rung: 'live', ...(one.index != null ? { variation: { seed: one.seed, index: one.index, strength: one.strength, count: one.count } } : {}) },
+  frame: one.src, lineage: [] });
+function saveFile(blob, name) {
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: name });
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+async function download(items) {
+  items = items.filter(Boolean); if (!items.length) return phase('failed', { message: 'Nothing to download yet: type, and let a picture land.' });
+  const many = items.length > 1;
+  phase('downloading', {});
+  const r = await post(many ? 'download/zip' : 'download', JSON.stringify(many ? { items } : items[0]), { 'content-type': 'application/json' });
+  if (!r) return;
+  if (!r.ok) return phase('failed', { message: (await r.json().catch(() => ({}))).message || 'VorpalFusion could not download that picture.' });
+  const name = r.headers.get('x-filename') || (many ? 'gpu-vision.zip' : 'gpu-vision.png');
+  saveFile(await r.blob(), name); phase('downloaded', { name });
+}
+$('dl').addEventListener('click', () => download([stageItem()]));
+const selected = new Set();
+function toggleSelect(id) {
+  if (selected.has(id)) selected.delete(id); else selected.add(id);
+  for (const id of [...selected]) if (!snapOf(id)) selected.delete(id);
+  $('dlsel').hidden = !selected.size; $('dlsel').textContent = `Download ${selected.size}`;
+  renderTree(); $('say').textContent = `${selected.size} selected`;
+}
+$('dlsel').addEventListener('click', () => download([...selected].map(snapOf).filter(Boolean).map(itemOf)));
+let hoverTarget = null, hoverTimer = 0;
+function hoverDl(el, target) {  // one download button that sits on the node or tile under the pointer or focus
+  clearTimeout(hoverTimer);
+  if (!el) { hoverTimer = setTimeout(() => { if (!$('dlhover').matches(':hover')) $('dlhover').hidden = true; }, 250); return; }
+  const r = el.getBoundingClientRect(); hoverTarget = target;
+  Object.assign($('dlhover').style, { left: `${r.right - 8}px`, top: `${r.top - 12}px` }); $('dlhover').hidden = false;
+}
+$('dlhover').addEventListener('click', () => download([hoverTarget?.()]));
+$('dlhover').addEventListener('mouseleave', () => hoverDl(null));
+$('cancel').addEventListener('click', async () => { $('cancel').hidden = true; await post('cancel', '{}'); });
+$('lock').addEventListener('click', () => toggleLock());
+function toggleLock() {  // composition fixed at a middle step on the words and seed of now; unlocking renders whole again
+  if (lock) lock = null;
+  else { const n = lastMeter?.steps || +$('lp').value || profile?.live_steps || 4; lock = { step: Math.max(1, Math.floor(n / 2)), of: n, prompt: sentWords ?? words(), seed }; }
+  $('lock').setAttribute('aria-pressed', !!lock); $('lock').textContent = lock ? `Locked ${lock.step}/${lock.of}` : 'Lock';
+  $('say').textContent = lock ? `Composition locked at step ${lock.step} of ${lock.of}` : 'Composition unlocked';
+  send();
+}
+
+// Layout boxes: the Box tool draws one on the stage, its word typed on it; dragging or resizing a box renders a live job
+// per move (at most one every 60 ms; the sidecar's latest wins). The pin: a region drawn with the Pin tool keeps the
+// picture on stage there, exactly, while the words, seed and knobs change the rest.
+let moveTimer = 0;
+function moved() {
+  panel = null; variation = null; keyAt ??= performance.now();
+  if (!moveTimer) moveTimer = setTimeout(() => { moveTimer = 0; send(); }, 60);
+}
+function setTool(next) {
+  tool = next;
+  $('boxbtn').setAttribute('aria-pressed', tool === 'box'); $('pinbtn').setAttribute('aria-pressed', tool === 'pin' || !!pinned);
+  $('boxes').classList.toggle('tool', !!tool);
+  if (tool) { boxesOff = false; paintBoxes(); $('say').textContent = tool === 'box' ? 'Box tool: draw a box on the picture' : 'Pin: draw the region to keep'; }
+}
+async function pinAsReference() {  // F: the picture on stage into the first reference slot; from a template with none, the family's edit template
+  const src = front.getAttribute('src'); if (!src) return phase('failed', { message: 'Nothing on stage to use as a reference yet: type, and let a picture land.' });
+  const blob = await (await fetch(src)).blob();
+  if (!profile?.edits) {
+    if (!profile?.edit_template) return phase('failed', { message: 'This template takes no reference picture, and no edit template is listed for it.' });
+    await useTemplate(profile.edit_template, { quiet: true });
+    // an edit starts clean: no boxes, pin, lock or Flow from the picture it edits
+    boxes = []; pinned = null; setTool(null); paintBoxes();
+    if (lock) toggleLock();
+    if (flowOn) toggleFlow(false);
+  }
+  const slot = (profile.media.find((m) => m.label.startsWith('reference')) || profile.media[0]).address;
+  await useSource(new File([blob], 'stage.png', { type: blob.type || 'image/png' }), slot);
+  $('split')?.querySelector('[data-n="1"]:not([aria-pressed=true])')?.click();  // one picture, framed as the reference
+  document.querySelector('[data-match="1"]')?.click();
+  $('say').textContent = `The picture on stage is the ${metaOf(slot)?.label || 'reference'} now`;
+}
+function unpin() { pinned = null; setTool(null); paintBoxes(); $('say').textContent = 'Unpinned'; send(); }
+const at = (e) => { const r = $('boxes').getBoundingClientRect(); return [1000 * (e.clientY - r.top) / r.height, 1000 * (e.clientX - r.left) / r.width]; };
+const clamp = (n) => Math.round(Math.max(0, Math.min(1000, n)));
+const place4 = (el, [y0, x0, y1, x1]) => Object.assign(el.style, { top: `${y0 / 10}%`, left: `${x0 / 10}%`, height: `${(y1 - y0) / 10}%`, width: `${(x1 - x0) / 10}%` });
+function paintBoxes() {
+  const layer = $('boxes'); layer.classList.toggle('off', boxesOff);
+  layer.innerHTML = (profile?.layout ? boxes : []).map((b, i) => `<div class="box" tabindex="0" data-i="${i}" aria-label="Box ${i + 1}: ${esc(b.desc || 'unnamed')} (arrows move it, shift+arrows resize, Delete removes)">`
+    + `<input value="${esc(b.desc)}" placeholder="what goes here" aria-label="What goes in box ${i + 1}" data-i="${i}"><span class="grip" data-i="${i}"></span>`
+    + `<button type="button" class="x" data-i="${i}" aria-label="Remove box ${i + 1}">×</button></div>`).join('')
+    + (pinOn() ? '<div class="pinned" id="pinrect"></div>' : '');
+  layer.querySelectorAll('.box').forEach((el) => place4(el, boxes[+el.dataset.i].bbox));
+  if (pinOn()) place4($('pinrect'), pinned.rect);
+  $('pinbtn').setAttribute('aria-pressed', tool === 'pin' || !!pinned);
+}
+function boxesChanged(render = true) { persist(); if (render) moved(); }
+$('boxbtn').addEventListener('click', () => setTool(tool === 'box' ? null : 'box'));
+$('refbtn').addEventListener('click', () => pinAsReference());
+function toggleFlow(on = !flowOn) {
+  flowOn = on; flowKind = null; paintFlow(); persist();
+  $('say').textContent = flowOn ? 'Flow: each picture starts from the last one' : 'Flow off'; send();
+}
+function paintFlow() { $('flowbtn').hidden = !profile?.flow; $('flowbtn').setAttribute('aria-pressed', flowOn && !!profile?.flow); }
+$('flowbtn').addEventListener('click', () => toggleFlow());
+$('pinbtn').addEventListener('click', () => { if (pinned) unpin(); else setTool(tool === 'pin' ? null : 'pin'); });
+let drag = null;  // {kind: 'draw' | 'move' | 'size', i, from, start}
+$('boxes').addEventListener('pointerdown', (e) => {
+  const i = e.target.dataset?.i, p = at(e);
+  if (e.target.matches('input, button')) return;
+  if (i != null && e.target.classList.contains('grip')) drag = { kind: 'size', i: +i, from: p, start: [...boxes[+i].bbox] };
+  else if (i != null) drag = { kind: 'move', i: +i, from: p, start: [...boxes[+i].bbox] };
+  else if (tool) { drag = { kind: 'draw', from: p }; $('boxes').insertAdjacentHTML('beforeend', `<div class="${tool === 'pin' ? 'pinned' : 'box'}" id="drawing"></div>`); }
+  else return;
+  e.preventDefault(); $('boxes').setPointerCapture(e.pointerId);
+});
+$('boxes').addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  const [y, x] = at(e), [fy, fx] = drag.from;
+  if (drag.kind === 'draw') { place4($('drawing'), [clamp(Math.min(y, fy)), clamp(Math.min(x, fx)), clamp(Math.max(y, fy)), clamp(Math.max(x, fx))]); return; }
+  const [y0, x0, y1, x1] = drag.start, dy = y - fy, dx = x - fx, b = boxes[drag.i];
+  if (drag.kind === 'move') {
+    const my = Math.max(-y0, Math.min(1000 - y1, dy)), mx = Math.max(-x0, Math.min(1000 - x1, dx));
+    b.bbox = [y0 + my, x0 + mx, y1 + my, x1 + mx].map(Math.round);
+  } else b.bbox = [y0, x0, clamp(Math.max(y0 + 20, y1 + dy)), clamp(Math.max(x0 + 20, x1 + dx))];
+  place4($('boxes').querySelector(`.box[data-i="${drag.i}"]`), b.bbox);
+  boxesChanged(!!b.desc.trim());
+});
+$('boxes').addEventListener('pointerup', async (e) => {
+  const d = drag; drag = null; if (!d) return;
+  if (d.kind !== 'draw') { if (boxes[d.i]?.desc.trim()) { clearTimeout(moveTimer); moveTimer = 0; send(); } return; }
+  const [y, x] = at(e), [fy, fx] = d.from;
+  const rect = [clamp(Math.min(y, fy)), clamp(Math.min(x, fx)), clamp(Math.max(y, fy)), clamp(Math.max(x, fx))];
+  $('drawing')?.remove();
+  if (rect[2] - rect[0] < 20 || rect[3] - rect[1] < 20) return;  // a click, not a box
+  if (tool === 'box') {
+    boxes.push({ bbox: rect, desc: '' }); setTool(null); paintBoxes(); persist();
+    $('boxes').querySelector(`.box[data-i="${boxes.length - 1}"] input`)?.focus();
+    return;
+  }
+  const src = front.getAttribute('src'); if (!src) return setTool(null);
+  const id = await upload(await (await fetch(src)).blob()); if (!id) return setTool(null);
+  pinned = { id, rect }; setTool(null); paintBoxes(); $('say').textContent = 'Pinned · typing changes the rest'; send();
+});
+$('boxes').addEventListener('input', (e) => {
+  const b = boxes[+e.target.dataset.i]; if (!b || !e.target.matches('input')) return;
+  b.desc = e.target.value; e.target.parentElement.setAttribute('aria-label', `Box ${+e.target.dataset.i + 1}: ${b.desc || 'unnamed'}`); boxesChanged();
+});
+$('boxes').addEventListener('click', (e) => {
+  if (!e.target.matches('.x')) return;
+  const had = !!boxes[+e.target.dataset.i]?.desc.trim();
+  boxes.splice(+e.target.dataset.i, 1); paintBoxes(); persist(); if (had) send();
+});
+$('boxes').addEventListener('keydown', (e) => {
+  if (e.target.matches('input')) {
+    if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); e.target.parentElement.focus(); }
+    return;
+  }
+  const i = +e.target.dataset?.i, b = boxes[i]; if (!b || !e.target.classList.contains('box')) return;
+  if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); boxes.splice(i, 1); paintBoxes(); persist(); send(); $('say').textContent = 'Box removed'; return; }
+  const by = { ArrowUp: [-25, 0], ArrowDown: [25, 0], ArrowLeft: [0, -25], ArrowRight: [0, 25] }[e.key]; if (!by) return;
+  e.preventDefault(); e.stopPropagation();
+  const [y0, x0, y1, x1] = b.bbox;
+  if (e.shiftKey) b.bbox = [y0, x0, clamp(Math.max(y0 + 20, y1 + by[0])), clamp(Math.max(x0 + 20, x1 + by[1]))];
+  else { const my = Math.max(-y0, Math.min(1000 - y1, by[0])), mx = Math.max(-x0, Math.min(1000 - x1, by[1])); b.bbox = [y0 + my, x0 + mx, y1 + my, x1 + mx]; }
+  place4(e.target, b.bbox); boxesChanged(!!b.desc.trim());
+});
+
+// Split panels: one batched job renders 1, 2 or 4 seeds' pictures; panel 1 streams its steps, the others land with the
+// job's output. A panel is (seed, index); picking one (a click, or 1-4) settles that one and climbs from it, and the
+// others stay in the tree as alternatives.
+function layoutPanels() {
+  const n = splitOn() && panel === null && profile?.kind === 'image' ? panels : 1;
+  const view = $('view'), wide = view.clientWidth / Math.max(1, view.clientHeight) > aspect;
+  const [cols, rows] = n === 4 ? [2, 2] : n === 2 ? (wide ? [2, 1] : [1, 2]) : [1, 1];
+  $('frame').style.setProperty('--cols', cols); $('frame').style.setProperty('--rows', rows);
+  $('cells').innerHTML = n === 1 ? '' : Array.from({ length: n }, (_, i) => `<button type="button" class="cell" data-i="${i}" style="left:${100 * (i % cols) / cols}%;top:${100 * Math.floor(i / cols) / rows}%"`
+    + ` aria-label="Pick panel ${i + 1} (${i + 1})" title="Pick panel ${i + 1} (${i + 1}): it settles">${i ? '<img alt="">' : ''}<span class="n">${i + 1}</span></button>`).join('');
+  for (const b of $('split').querySelectorAll('button')) b.setAttribute('aria-pressed', +b.dataset.n === panels);
+  paintPanels();
+}
+function paintPanels() {
+  if (!panelSet || panelSet.v < epochV) return;
+  for (const img of $('cells').querySelectorAll('.cell img')) {
+    const i = +img.parentElement.dataset.i; if (panelSet.srcs[i]) { img.src = panelSet.srcs[i]; img.alt = `${$('prompt').value.trim()} · panel ${i + 1}`; }
+  }
+}
+function pick(i) {
+  if (!splitOn() || panel !== null || !panelSet || !panelSet.srcs[i]) return;
+  const cond = condition(), srcs = panelSet.srcs;
+  srcs.forEach((src, j) => { if (j !== i) addSnap({ ...cond, panel: j }, src); });  // the alternatives
+  panel = i; send(); layoutPanels(); show(srcs[i], 0, sentV);
+  $('say').textContent = `Panel ${i + 1} picked: it settles`;
+}
+$('cells').addEventListener('click', (e) => { const b = e.target.closest('.cell'); if (b) pick(+b.dataset.i); });
+$('split').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  panels = +b.dataset.n; panel = null; panelSet = null; layoutPanels(); persist(); soon();
+});
+addEventListener('resize', () => layoutPanels());
+
+// A playing clip's chrome: the elapsed part of a 2 px bar along its bottom edge (6 px with the time on hover or focus,
+// click or drag to seek, ← → step 0.5 s), and a sound toggle (muted by default, M; the choice persists) for clips with sound.
+let soundOn = !!load('gv.sound', false), clipHasSound = false, seeking = false;
+const ICON = { on: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6h3l4-3v10L5 10H2z"/><path d="M11 5.5a3.5 3.5 0 0 1 0 5M12.5 3.5a6 6 0 0 1 0 9"/></svg>',
+               off: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6h3l4-3v10L5 10H2z"/><path d="M11 6l4 4M15 6l-4 4"/></svg>' };
+const clock = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+function clipChrome() {
+  requestAnimationFrame(clipChrome);
+  const v = vfront, on = !v.classList.contains('back') && !!v.getAttribute('src') && $('compare').hidden;
+  if (on !== $('frame').classList.contains('clip')) {
+    $('frame').classList.toggle('clip', on); $('scrub').hidden = !on; $('scrub').tabIndex = on ? 0 : -1;
+    if (!on) $('vol').hidden = true;
+  }
+  if (!on) return;
+  const d = v.duration || 0, t = v.currentTime || 0;
+  $('frame').classList.toggle('paused', v.paused); $('frame').classList.toggle('playing', !v.paused);
+  if (d) {
+    $('fill').style.width = `${100 * Math.min(1, t / d)}%`;
+    const text = `${clock(t)} / ${clock(d)}`;
+    if ($('cliptime').textContent !== text) { $('cliptime').textContent = text; $('scrub').setAttribute('aria-valuetext', text); }
+    $('scrub').setAttribute('aria-valuemax', d.toFixed(1)); $('scrub').setAttribute('aria-valuenow', t.toFixed(1));
+  }
+  if ($('vol').hidden === clipHasSound) paintSound();
+}
+async function hasSound(src) {  // whether the clip carries a sound track: an MP4 handler of type 'soun'
+  try { return /hdlr[\s\S]{8}soun/.test(new TextDecoder('latin1').decode(await (await fetch(src)).arrayBuffer())); } catch { return false; }
+}
+function paintSound() {
+  $('vol').hidden = !clipHasSound || !$('frame').classList.contains('clip');
+  $('vol').innerHTML = soundOn ? ICON.on : ICON.off; $('vol').setAttribute('aria-pressed', soundOn);
+  $('vol').setAttribute('aria-label', soundOn ? 'Sound on: mute (M)' : 'Sound off: unmute (M)');
+}
+function toggleSound() {
+  if ($('vol').hidden) return;
+  soundOn = !soundOn; save('gv.sound', soundOn); vfront.muted = vback.muted = !soundOn; paintSound();
+  $('say').textContent = soundOn ? 'Sound on' : 'Sound off';
+}
+$('vol').addEventListener('click', toggleSound);
+function seekTo(e) {
+  const r = $('scrub').getBoundingClientRect(), d = vfront.duration || 0;
+  if (d) vfront.currentTime = Math.max(0, Math.min(d - 0.01, (e.clientX - r.left) / r.width * d));
+}
+$('scrub').addEventListener('pointerdown', (e) => { seeking = true; $('scrub').setPointerCapture(e.pointerId); seekTo(e); });
+$('scrub').addEventListener('pointermove', (e) => { if (seeking) seekTo(e); });
+$('scrub').addEventListener('pointerup', () => { seeking = false; });
+$('scrub').addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  e.preventDefault(); e.stopPropagation();
+  const d = vfront.duration || 0; if (!d) return;
+  vfront.currentTime = (vfront.currentTime + (e.key === 'ArrowRight' ? 0.5 : -0.5) + d) % d;
+});
+requestAnimationFrame(clipChrome);
+
+// Enrich, Final with an enhancer: the window beside the stage shows what the creator wrote and what the model read,
+// words kept, added (marked) and dropped (struck).
+function wordDiff(a, b) {  // a longest-common-subsequence diff over words
+  const x = a.split(/\s+/).filter(Boolean), y = b.split(/\s+/).filter(Boolean);
+  const n = x.length, m = y.length, L = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = x[i].toLowerCase().replace(/\W/g, '') === y[j].toLowerCase().replace(/\W/g, '') ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  const out = []; let i = 0, j = 0;
+  while (i < n || j < m) {
+    if (i < n && j < m && x[i].toLowerCase().replace(/\W/g, '') === y[j].toLowerCase().replace(/\W/g, '')) { out.push(esc(y[j])); i++; j++; }
+    else if (j < m && (i >= n || L[i][j + 1] >= L[i + 1][j])) out.push(`<ins>${esc(y[j++])}</ins>`);
+    else out.push(`<del>${esc(x[i++])}</del>`);
+  }
+  return out.join(' ');
+}
+let readText = '';
+function showRead(f) {
+  readText = f.read;
+  $('wrote').textContent = f.wrote; $('modelread').innerHTML = wordDiff(f.wrote, f.read);
+  $('readbtn').hidden = false; toggleRead(true);
+}
+function toggleRead(open = $('read').hidden) { $('read').hidden = !open; $('readbtn').setAttribute('aria-pressed', open); }
+$('readbtn').addEventListener('click', () => toggleRead());
+$('usewords').addEventListener('click', () => { $('prompt').value = readText; toggleRead(false); $('prompt').focus(); typedAt = -1e9; send(); });
+
+// The seed field: the settled picture and its neighbours, filled while the creator rests.
+let field = [], returnFocus = null;
+function resetField(src) {
+  field = [{ seed, src }];
+  $('grid').innerHTML = Array.from({ length: 9 }, (_, i) => `<button type="button" data-i="${i}" draggable="true" tabindex="${i === 0 ? 0 : -1}"${i === 0 ? ' class="current"' : ''} aria-busy="true" aria-label="rendering"></button>`).join('');
+  paintField();
+}
+function paintField() {
+  [...$('grid').children].forEach((tile, i) => {
+    const one = field[i]; if (!one) return;
+    const name = `${$('prompt').value.trim() || 'no words'} · ${one.index != null ? `variation ${one.index + 1} at ${one.strength}, seed ${one.seed}` : `seed ${one.seed}`} · ${profile?.title || template}${i === 0 ? ', current' : ''}`;
+    tile.style.backgroundImage = `url(${one.src})`; tile.title = name;
+    tile.setAttribute('aria-label', name); tile.setAttribute('aria-busy', 'false');
+  });
+}
+function toggleField(open = $('field').inert) {
+  $('field').inert = !open; $('field').classList.toggle('on', open);
+  if (open) { returnFocus = document.activeElement; ($('grid').querySelector('button') || $('seeds')).focus(); }
+  else (returnFocus || $('seeds')).focus();
+}
+$('seeds').addEventListener('click', () => toggleField());
+$('grid').addEventListener('click', (e) => {
+  const one = field[+e.target.closest('button')?.dataset.i]; if (!one) return;
+  toggleField(false);
+  if (one.index != null || variation) return useVariation(one);
+  setSeed(one.seed);
+});
+function useVariation(one) {  // a variation tile: (seed, index) of its batch; the first tile goes back to the settled picture
+  variation = one.index != null ? { seed: one.seed, index: one.index, strength: one.strength, count: one.count } : null;
+  send(); show(one.src, 0, sentV);
+}
+$('fieldmode').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  fieldMode = b.dataset.m; paintFieldMode(); persist(); soon();
+});
+function paintFieldMode() {
+  for (const x of $('fieldmode').querySelectorAll('button')) x.setAttribute('aria-pressed', x.dataset.m === fieldMode);
+  $('varyrow').hidden = fieldMode !== 'variations';
+}
+$('vary').addEventListener('change', () => { $('varyv').textContent = $('vary').value; if (fieldMode === 'variations') soon(); });
+$('vary').addEventListener('input', () => { $('varyv').textContent = $('vary').value; });
+paintFieldMode();
+function setSeed(value) {
+  seed = value; $('seedv').value = seed; variation = null;
+  send();
+  const tile = field.find((one) => one.seed === value && one.index == null);
+  if (tile) show(tile.src, 0, sentV);  // already rendered in the field: show it now
+}
+$('seedv').addEventListener('change', () => { if ($('seedv').value !== '') setSeed(Math.max(0, Math.floor(+$('seedv').value))); });
+$('reroll').addEventListener('click', () => setSeed(Math.floor(Math.random() * 2 ** 31)));
+
+// Snapshots: a tree that branches as you work. Each holds the whole condition and its frame.
+const tree = load('gv.tree', { snaps: [], head: null });
+let snaps = tree.snaps || [], head = tree.head ?? null, hovered = null, markA = null;
+const frames = {};  // full-size frames from this session, by snapshot id; the tree keeps small thumbs
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const norm = (o) => JSON.stringify(Object.entries(o || {}).sort());
+const sorted = (list) => JSON.stringify([...(list || [])].map((s) => [s.slot, s.id]).sort());
+const snapOf = (id) => snaps.find((s) => s.id === id);
+const label = (s) => `${RUNG_NAMES[s.rung] || (s.auto ? 'Settled' : 'Snapshot')}${s.media === 'video' ? ' clip' : ''}: ${s.prompt || 'no words'} · seed ${s.seed}`
+  + `${s.panels > 1 ? ` · panel ${(s.panel ?? 0) + 1}` : ''} · ${s.title || s.template}`;
+function condition() {
+  return { template, title: profile?.title || template, prompt: $('prompt').value, seed, values: { ...values },
+           sources: sources.map((s) => ({ slot: s.slot, id: s.id, ...(s.parent ? { parent: s.parent } : {}) })), strength: +$('st').value, aspect,
+           panels: splitOn() ? panels : 1, panel: splitOn() ? panel : null, ...(variation ? { variation } : {}),
+           ...(layoutBoxes() ? { boxes: layoutBoxes() } : {}), ...(pinOn() ? { pin: { ...pinned } } : {}), ...(model ? { model } : {}) };
+}
+const same = (a, b) => !!a && !!b && a.template === b.template && a.prompt === b.prompt && a.seed === b.seed
+  && a.strength === b.strength && norm(a.values) === norm(b.values) && sorted(a.sources) === sorted(b.sources)
+  && (a.panels || 1) === (b.panels || 1) && (a.panel ?? null) === (b.panel ?? null) && norm(a.variation) === norm(b.variation)
+  && JSON.stringify(a.boxes || []) === JSON.stringify(b.boxes || []) && norm(a.pin) === norm(b.pin) && (a.model || null) === (b.model || null);
+function thumb(src, media) {
+  return new Promise((resolve) => {
+    const el = media === 'video' ? Object.assign(document.createElement('video'), { muted: true, preload: 'auto' }) : new Image();
+    el.crossOrigin = 'anonymous';  // a rung shows from the sidecar by URL; framed, that is another origin
+    const done = () => {
+      try {
+        const w = el.videoWidth || el.naturalWidth, h = el.videoHeight || el.naturalHeight, k = 192 / Math.max(w, h);
+        const c = Object.assign(document.createElement('canvas'), { width: Math.round(w * k), height: Math.round(h * k) });
+        c.getContext('2d').drawImage(el, 0, 0, c.width, c.height);
+        resolve(c.toDataURL('image/jpeg', 0.8));
+      } catch { resolve(null); }
+    };
+    el.onerror = () => resolve(null);
+    if (media === 'video') el.onloadeddata = done; else el.onload = done;
+    el.src = src;
+  });
+}
+async function snapshot(auto, f) {
+  const src = f?.src || (vfront.classList.contains('back') ? front.src : vfront.src);
+  if (!src) return null;
+  const media = f?.media || (!vfront.classList.contains('back') && vfront.src ? 'video' : 'image');
+  const cond = condition(), at = snapOf(head);
+  if (same(at, cond)) {  // the same condition: refresh that snapshot, never a duplicate
+    if (!auto) at.auto = false;
+    frames[at.id] = src; at.media = media; at.thumb = (await thumb(src, media)) || at.thumb;
+    keepTree(); return at;
+  }
+  const snap = { id: uid(), parent: head, auto, t: Date.now(), ...cond, media, thumb: null,
+                 rung: auto ? 'settled' : document.body.classList.contains('settled') ? 'settled' : media === 'video' ? 'draft' : 'live' };
+  frames[snap.id] = src; snaps.push(snap); head = snap.id;
+  snap.thumb = await thumb(src, media);
+  keepTree(); return snap;
+}
+async function addSnap(cond, src) {  // an alternative beside the head (a panel not picked): the head stays
+  const snap = { id: uid(), parent: head, auto: true, t: Date.now(), ...cond, media: 'image', thumb: null, rung: 'live' };
+  frames[snap.id] = src; snaps.push(snap); snap.thumb = await thumb(src, 'image'); keepTree();
+}
+function prune() {  // the oldest automatic snapshot goes; its children join its parent
+  const victim = snaps.find((s) => s.auto && s.id !== head); if (!victim) return false;
+  for (const s of snaps) if (s.parent === victim.id) s.parent = victim.parent;
+  snaps = snaps.filter((s) => s !== victim); delete frames[victim.id];
+  return true;
+}
+function keepTree() {
+  while (snaps.filter((s) => s.auto).length > 60 && prune());
+  while (!save('gv.tree', { head, snaps }) && store && prune());
+  renderTree();
+}
+function renderTree() {
+  const lane = {}, used = new Set(); let lanes = 0;
+  const pos = snaps.map((s, i) => {
+    let at;
+    if (s.parent in lane && !used.has(s.parent)) { at = lane[s.parent]; used.add(s.parent); } else at = lanes++;
+    lane[s.id] = at;
+    return { s, x: 30 + i * 50, y: 30 + at * 46 };
+  });
+  const by = Object.fromEntries(pos.map((p) => [p.s.id, p]));
+  const lines = pos.filter((p) => by[p.s.parent]).map((p) => `<path d="M${by[p.s.parent].x} ${by[p.s.parent].y}V${p.y}H${p.x}"/>`).join('');
+  $('lanes').style.width = `${60 + snaps.length * 50}px`; $('lanes').style.height = `${60 + Math.max(0, lanes - 1) * 46}px`;
+  $('lanes').innerHTML = `<svg aria-hidden="true">${lines}</svg>` + pos.map(({ s, x, y }) =>
+    `<button type="button" class="node${s.auto ? ' auto' : ''}${s.id === head ? ' head' : ''}${selected.has(s.id) ? ' sel' : ''}${s.media === 'video' ? ' clip' : ''}${climbing[s.id] ? ' climbing' : ''}" data-id="${s.id}" draggable="true"`
+    + `${['final', '2k', '4k', 'smooth'].includes(s.rung) ? ` data-rung="${RUNG_NAMES[s.rung]}"` : ''}`
+    + ` tabindex="${s.id === (head ?? snaps.at(-1)?.id) ? 0 : -1}" style="left:${x}px;top:${y}px;${s.thumb ? `background-image:url(${s.thumb})` : ''}" aria-label="${esc(label(s))}" title="${esc(label(s))}"`
+    + `${s.id === head ? ' aria-current="true"' : ''}></button>`).join('');
+  if (!snaps.length) { $('lanes').style.width = ''; $('lanes').innerHTML = '<p class="hint">Snapshots land here: S takes one, each settle a small one; U graduates one, K keeps it.</p>'; }
+  $('tree').hidden = false; $('export').disabled = !snaps.length;
+  $('laneswrap').scrollLeft = $('laneswrap').scrollWidth;
+}
+async function restore(id) {
+  hideCompare();
+  const s = snapOf(id); if (!s) return;
+  hideCompare();
+  if (s.template !== template) await useTemplate(s.template, { quiet: true });
+  $('prompt').value = s.prompt; seed = s.seed; $('seedv').value = seed; values = { ...s.values };
+  sources = s.sources.map((x) => ({ ...x })); $('st').value = s.strength; $('stv').textContent = s.strength; setAspect(s.aspect);
+  if (s.panels > 1) { panels = s.panels; panel = s.panel ?? 0; } else panel = null;  // a panel comes back as (seed, index)
+  variation = s.variation || null;  // so does a variation
+  boxes = (s.boxes || []).map((b) => ({ bbox: [...b.bbox], desc: b.desc })); pinned = s.pin ? { ...s.pin } : null; paintBoxes();
+  model = s.model || null;
+  head = id; epochV = v + 1;
+  const full = frames[id];
+  if (s.media === 'video' && full) flow(full, epochV); else show(full || s.thumb, 0, full ? epochV : epochV - 1);
+  renderControls(); keepTree();
+  if (await checkSources()) send();
+  stageRung = rungOf(s); ladderControls();
+}
+function openAB(a, b) {
+  const A = snapOf(a), B = snapOf(b); if (!A || !B || a === b) return;
+  $('abA').src = frames[a] || A.thumb; $('abA').alt = label(A); $('abAc').textContent = label(A);
+  $('abB').src = frames[b] || B.thumb; $('abB').alt = label(B); $('abBc').textContent = label(B);
+  returnFocus = document.activeElement; $('ab').hidden = false; $('abclose').focus();
+}
+function closeAB() { $('ab').hidden = true; (returnFocus || $('prompt')).focus(); }
+$('abclose').addEventListener('click', closeAB);
+const nodeId = (e) => e.target.closest?.('.node')?.dataset.id;
+$('lanes').addEventListener('click', (e) => { const id = nodeId(e); if (!id) return; if (e.shiftKey || e.metaKey || e.ctrlKey) toggleSelect(id); else restore(id); });
+const nodeHover = (e, id) => { hovered = id; showCompare(snapOf(id)); hoverDl(e.target.closest('.node'), () => snapOf(id) && itemOf(snapOf(id))); };
+$('lanes').addEventListener('mouseover', (e) => { const id = nodeId(e); if (id) nodeHover(e, id); });
+$('lanes').addEventListener('mouseout', (e) => { if (nodeId(e)) { hovered = null; hideCompare(); hoverDl(null); } });
+$('lanes').addEventListener('focusin', (e) => { const id = nodeId(e); if (id) nodeHover(e, id); });
+$('lanes').addEventListener('focusout', (e) => { if (nodeId(e)) { hovered = null; hideCompare(); hoverDl(null); } });
+$('laneswrap').addEventListener('scroll', () => { $('dlhover').hidden = true; });
+const tileOf = (e) => field[+e.target.closest?.('#grid > button')?.dataset.i];
+$('grid').addEventListener('mouseover', (e) => { const one = tileOf(e); if (one) hoverDl(e.target.closest('button'), () => tileItem(one)); });
+$('grid').addEventListener('mouseout', () => hoverDl(null));
+$('grid').addEventListener('focusin', (e) => { const one = tileOf(e); if (one) hoverDl(e.target.closest('button'), () => tileItem(one)); });
+function rove(list, at, by, cols = list.length) {  // arrow keys move focus within a group that is one tab stop
+  const to = list[Math.max(0, Math.min(list.length - 1, at + by))]; if (!to) return;
+  for (const el of list) el.tabIndex = el === to ? 0 : -1;
+  to.focus();
+}
+$('lanes').addEventListener('keydown', (e) => {
+  const nodes = [...$('lanes').querySelectorAll('.node')], at = nodes.indexOf(e.target);
+  if (at >= 0 && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
+    e.preventDefault(); e.stopPropagation();
+    rove(nodes, at, { ArrowLeft: -1, ArrowRight: 1, Home: -at, End: nodes.length }[e.key]);
+  }
+});
+$('grid').addEventListener('keydown', (e) => {
+  const tiles = [...$('grid').children], at = tiles.indexOf(e.target), by = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -3, ArrowDown: 3 }[e.key];
+  if (at >= 0 && by) { e.preventDefault(); e.stopPropagation(); rove(tiles, at, by); }
+});
+$('lanes').addEventListener('keydown', (e) => {  // Shift+Enter marks A, then Shift+Enter on another opens A/B
+  const id = nodeId(e); if (!id || e.key !== 'Enter' || !e.shiftKey) return;
+  e.preventDefault();
+  if (markA && markA !== id) { openAB(markA, id); markA = null; } else markA = id;
+});
+$('lanes').addEventListener('dragstart', (e) => { const id = nodeId(e); if (id) { e.dataTransfer.setData('text/plain', id); e.dataTransfer.setData('application/x-gv-snap', id); } });
+$('lanes').addEventListener('dragover', (e) => { if (nodeId(e)) e.preventDefault(); });
+$('lanes').addEventListener('drop', (e) => { const id = nodeId(e); if (id) { e.preventDefault(); openAB(e.dataTransfer.getData('text/plain'), id); } });
+$('pin').addEventListener('click', () => snapshot(false));
+$('export').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify({ schema: 'gpu-vision.snapshots', head, snaps }, null, 1)], { type: 'application/json' });
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'gpu-vision-snapshots.json' });
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+$('import').addEventListener('click', () => $('importfile').click());
+$('importfile').addEventListener('change', async () => {
+  try {
+    const data = JSON.parse(await $('importfile').files[0].text());
+    if (data.schema !== 'gpu-vision.snapshots' || !Array.isArray(data.snaps)) throw new Error();
+    snaps = data.snaps; head = data.head ?? null; keepTree();
+  } catch { phase('failed', { message: 'That file is not a VorpalFusion snapshot tree.' }); }
+  $('importfile').value = '';
+});
+function compareTarget() {
+  const at = snapOf(head);
+  return snapOf(hovered) || (same(at, condition()) ? snapOf(at?.parent) : at);
+}
+
+// Instant reroll: R shows the next seed the field already rendered at once and locks it (a seed one
+// on when the field is empty); ⇧R goes back through the seeds R left.
+const rerolled = [];
+function reroll(back) {
+  if (back) { if (rerolled.length) setSeed(rerolled.pop()); return; }
+  const seeds = field.filter((t) => t.index == null), at = seeds.findIndex((t) => t.seed === seed);  // variations are not seeds
+  rerolled.push(seed);
+  setSeed(seeds[at + 1]?.seed ?? (at >= 0 && seeds[0].seed !== seed ? seeds[0].seed : seed + 1));
+}
+// Keys: S snapshot, B compare, G seed field, R/⇧R reroll, E enrich, U graduate, K keep, 1-4 pick a panel, M sound,
+// ←/→ steps, ⌥←/⌥→ seed; none while typing words.
+addEventListener('keydown', (e) => {
+  const typing = e.target.matches?.('textarea, select, input:not([type=range]):not([type=checkbox])');
+  if (e.metaKey && e.key === 'r') { e.preventDefault(); $('reroll').click(); }
+  if (e.key === 'Escape') {
+    if (!$('ab').hidden) closeAB();
+    else if (!$('lib').hidden) toggleLib(false);
+    else if (!$('field').inert) toggleField(false);
+    else if (!$('drawer').hidden) toggleDrawer(false);
+    else if (!$('read').hidden) { toggleRead(false); if (e.target === $('prompt')) $('prompt').blur(); }
+    else if (e.target === $('prompt')) $('prompt').blur();  // Esc leaves the words, so S, G, B and R work
+    else if (pinned) unpin();
+    else if (tool) setTool(null);
+    return;
+  }
+  if (typing || e.metaKey || e.ctrlKey) return;
+  if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { e.preventDefault(); setSeed(Math.max(0, seed + (e.key === 'ArrowRight' ? 1 : -1))); }
+  else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.target.closest?.('#lanes, #grid, #timeline, #scrub')) { e.preventDefault(); timeline.walk(e.key === 'ArrowRight' ? 1 : -1); }
+  if (e.key === 'u') graduate(nodeId(e) || head);
+  if (e.key === 'd') { const id = nodeId(e), one = tileOf(e); download([id ? itemOf(snapOf(id)) : one ? tileItem(one) : stageItem()]); }
+  if (e.key === 'x' && nodeId(e)) toggleSelect(nodeId(e));
+  if (e.key === 'l') toggleLock();
+  if (e.key === 'o' && profile?.layout) setTool(tool === 'box' ? null : 'box');
+  if (e.key === 'p' && profile?.pin) { if (pinned) unpin(); else setTool(tool === 'pin' ? null : 'pin'); }
+  if (e.key === 'f') pinAsReference();
+  if (e.key === 'w' && profile?.flow) toggleFlow();
+  if (e.key === 'h') { boxesOff = !boxesOff; paintBoxes(); $('say').textContent = boxesOff ? 'Boxes hidden' : 'Boxes shown'; }
+  if (e.key === 'k' && !framed) keep();
+  if (e.key === 'm') toggleSound();
+  if (/^[1-4]$/.test(e.key) && !e.target.closest?.('#timeline')) pick(+e.key - 1);
+  if (e.key === 'r' || e.key === 'R') reroll(e.shiftKey);
+  if (e.key === 'e' && !$('enrich').hidden) $('enrich').click();
+  if (e.key === 'g') toggleField();
+  if (e.key === 's') snapshot(false);
+  if (e.key === 'b' && !e.repeat) showCompare(compareTarget());
+});
+addEventListener('keyup', (e) => { if (e.key === 'b' && !hovered) hideCompare(); });
+addEventListener('blur', () => { if (!hovered) hideCompare(); });
+
+// Templates, pictures, settings.
+function fillChooser() {
+  const groups = [...new Set(templates.map((t) => t.group))];
+  $('template').innerHTML = groups.map((g) => `<optgroup label="${esc(g)}">`
+    + templates.filter((t) => t.group === g).map((t) => `<option value="${esc(t.name)}">${esc(t.title)}</option>`).join('') + '</optgroup>').join('');
+}
+async function resync() {
+  if (!templates.length) {
+    const r = await call('templates'); if (!r?.ok) return;
+    templates = await r.json(); fillChooser();
+    call('library').then((lib) => { $('libbtn').hidden = !lib?.ok; });  // no Saddle, no library
+  }
+  const name = templates.some((t) => t.name === template) ? template
+    : (templates.find((t) => t.name === 'image_flux3_klein_distilled_t2i') ?? templates[0])?.name;
+  if (name) await useTemplate(name);
+}
+async function useTemplate(name, opts = {}) {
+  const r = await post('template', JSON.stringify({ name }));
+  if (r?.status === 422) return phase('failed', { message: (await r.json()).message });  // comfy-cli could not build it
+  if (!r?.ok) return;
+  const next = await r.json();
+  if (name !== template) {
+    values = {}; clipHasSound = false;
+    if (profile) {  // pictures carry over by position: the source stays the source
+      const index = (slot) => profile.media.findIndex((m) => m.address === slot);
+      sources = sources.filter((s) => index(s.slot) >= 0 && index(s.slot) < next.media.length).map((s) => ({ slot: next.media[index(s.slot)].address, id: s.id }));
+    }
+  }
+  profile = next; template = name; $('template').value = name;
+  epochV = v + 1;  // frames for older templates or pictures are dropped from here
+  lastLive = null;
+  renderControls();
+  if (opts.quiet) return;
+  if (await checkSources()) send();
+}
+$('template').addEventListener('change', () => useTemplate($('template').value));
+$('model').addEventListener('change', () => { model = $('model').value || null; persist(); soon(); });
+async function checkSources() {  // the sidecar's registry may have restarted: a lost picture must be dropped again
+  const lost = [];
+  for (const s of sources) {
+    const r = await post('source/use', JSON.stringify({ id: s.id }));
+    if (r?.status === 404) lost.push(s);
+  }
+  if (!lost.length) return true;
+  sources = sources.filter((s) => !lost.includes(s)); renderControls(); persist();
+  phase('failed', { message: 'A picture was lost when VorpalFusion restarted. Drop it again.' });
+  return false;
+}
+function renderControls() {
+  $('seedv').value = seed;
+  $('tray').innerHTML = (profile?.media || []).map((m) => {
+    const s = sources.find((x) => x.slot === m.address), name = esc(m.label);
+    return `<span class="slot"><button type="button" class="pick${s ? ' has' : ''}" data-slot="${esc(m.address)}" aria-label="${s ? 'Replace' : 'Add'} the ${name} picture" title="${name}: click or drop a picture">`
+      + `${s ? `<img src="${esc(thumbs[s.id] || `source/${s.id}`)}" alt="">` : '＋ '}<span>${name}</span>${m.chip ? ` <em class="role">${esc(m.chip)}</em>` : ''}</button>`
+      + `${s ? `<button type="button" class="unpick" data-slot="${esc(m.address)}" aria-label="Remove the ${name} picture">×</button>` : ''}</span>`;
+  }).join('');
+  $('strength').hidden = !sources.some((s) => s.slot === 'latent');
+  $('split').hidden = !profile?.panels;
+  const models = profile?.models || []; if (!models.includes(model)) model = null;
+  $('model').hidden = !models.length;
+  $('model').innerHTML = models.length ? `<option value="">${esc(profile.title)}</option>` + models.map((m) => `<option value="${esc(m)}">${esc(m)}</option>`).join('') : '';
+  $('model').value = model || '';
+  paintFlow(); $('boxbtn').hidden = !profile?.layout; $('refbtn').hidden = !(profile?.kind === 'image' && (profile.edits || profile.edit_template)); $('pinbtn').hidden = !profile?.pin; if (!profile?.layout && !profile?.pin) setTool(null); paintBoxes();
+  renderSize(); renderTimeline(); layoutPanels(); ladderControls();
+  $('tknobs').innerHTML = (profile?.knobs || []).map((k, i) => `<label title="${esc(k.address)}">${esc(k.label)} <span>${values[k.address] ?? k.value}</span>`
+    + `<input type="range" data-i="${i}" min="${k.min}" max="${k.max}" step="${k.step}" value="${values[k.address] ?? k.value}" aria-label="${esc(k.label)}"></label>`).join('');
+  renderDrawer();
+  if (profile?.edits && !sources.some((s) => s.slot === profile.media[0].address)) phase('needs', { label: profile.media[0].label });
+  else $('empty').textContent = 'Type to see it develop · drop a picture to start from it';
+}
+$('tknobs').addEventListener('input', (e) => {
+  const k = profile.knobs[+e.target.dataset.i]; if (!k) return;
+  values[k.address] = +e.target.value; e.target.previousElementSibling.textContent = e.target.value; lastKnob = k.address; soon();
+});
+let pickSlot = null;
+$('tray').addEventListener('click', (e) => {
+  const button = e.target.closest('button'); if (!button) return;
+  if (button.classList.contains('unpick')) { sources = sources.filter((s) => s.slot !== button.dataset.slot); epochV = v + 1; renderControls(); send(); return; }
+  pickSlot = button.dataset.slot; $('file').click();
+});
+$('tray').addEventListener('dragover', (e) => { const b = e.target.closest('.pick'); if (b) { e.preventDefault(); b.classList.add('over'); } });
+$('tray').addEventListener('dragleave', (e) => e.target.closest('.pick')?.classList.remove('over'));
+$('tray').addEventListener('drop', (e) => {
+  const b = e.target.closest('.pick'); if (!b) return;
+  e.preventDefault(); e.stopPropagation(); b.classList.remove('over'); place(dropped(e.dataTransfer), b.dataset.slot);
+});
+$('file').addEventListener('change', () => { useSource($('file').files[0], pickSlot); $('file').value = ''; });
+async function useSource(file, slot = profile?.media[0]?.address, parent = null) {
+  if (!file || !slot) return;
+  const url = URL.createObjectURL(file);
+  try {
+    if (!file.type.startsWith('image/') || !file.size) throw new Error();
+    const img = new Image(); img.src = url; await img.decode();
+    if (slot === profile.media[0].address) { setAspect(img.naturalWidth / img.naturalHeight); epochV = v + 1; show(url, 0, epochV); }
+  } catch {
+    URL.revokeObjectURL(url);
+    return phase('failed', { message: 'That file is not a picture VorpalFusion can read. Try a PNG, JPEG or WebP.' });
+  }
+  const id = await upload(file);
+  if (!id) return;
+  thumbs[id] = url;
+  sources = sources.filter((s) => s.slot !== slot).concat({ slot, id, ...(parent ? { parent } : {}) });
+  renderControls(); send();
+}
+
+// Drops, from anywhere: a file, a Saddle library result, a snapshot from the tree or a seed tile. Each lands on
+// the slot it is dropped on (the stage: the source); a library result keeps its library id as the picture's parent.
+function dropped(dt) {
+  if (dt.files?.length) return { file: dt.files[0] };
+  const lib = dt.getData('application/x-gv-library'); if (lib) return { library: JSON.parse(lib) };
+  const snap = dt.getData('application/x-gv-snap'); if (snap && snapOf(snap)) return { url: frames[snap] || snapOf(snap).thumb };
+  const tile = dt.getData('application/x-gv-seed'); if (tile && field[+tile]) return { url: field[+tile].src };
+  return null;
+}
+async function place(item, slot = profile?.media[0]?.address) {
+  if (!item || !slot) return;
+  if (item.file) return useSource(item.file, slot);
+  if (item.library) {
+    const r = await post('source/library', JSON.stringify({ rel: item.library.rel }));
+    if (!r?.ok) return phase('failed', { message: 'VorpalFusion could not fetch that library picture. Try another.' });
+    const got = await r.json(); rels[item.library.rel] = got.id; thumbs[got.id] = `source/${got.id}`;
+    return useSource(await (await fetch(`source/${got.id}`)).blob(), slot, got.parent);
+  }
+  try { return useSource(await (await fetch(item.url)).blob(), slot); } catch { phase('failed', { message: 'That picture could not be read. Try another.' }); }
+}
+
+// The Library drawer (standalone): Saddle's library through the sidecar, searchable, boards as filters; results drag
+// onto any slot, a timeline card or the stage, or Enter puts one in the first empty slot.
+let libItems = [];
+async function loadLibrary() {
+  const q = $('libq').value.trim(), board = $('libboard').value;
+  const r = await call(`library?q=${encodeURIComponent(q)}${board ? `&board=${encodeURIComponent(board)}` : ''}`); if (!r?.ok) return;
+  const page = await r.json(); libItems = page.items;
+  if (page.boards?.length && $('libboard').options.length === 1)
+    $('libboard').innerHTML += page.boards.map((b) => `<option value="${esc(b.id)}">${esc(b.name || b.id)}</option>`).join('');
+  $('libgrid').innerHTML = libItems.map((it, i) => `<button type="button" draggable="true" data-i="${i}" style="background-image:url(${esc(it.thumb)})"`
+    + ` aria-label="${esc(it.title)}" title="${esc(it.title)}"></button>`).join('') || '<p>No results.</p>';
+}
+function toggleLib(open = $('lib').hidden) {
+  $('lib').hidden = !open; $('libbtn').setAttribute('aria-expanded', open);
+  if (open) { returnFocus = document.activeElement; loadLibrary(); $('libq').focus(); } else (returnFocus || $('libbtn')).focus();
+}
+$('libbtn').addEventListener('click', () => toggleLib());
+$('libclose').addEventListener('click', () => toggleLib(false));
+let libTimer = 0;
+$('libq').addEventListener('input', () => { clearTimeout(libTimer); libTimer = setTimeout(loadLibrary, 250); });
+$('libboard').addEventListener('change', loadLibrary);
+$('libgrid').addEventListener('dragstart', (e) => {
+  const it = libItems[+e.target.closest('button')?.dataset.i]; if (!it) return;
+  e.dataTransfer.setData('application/x-gv-library', JSON.stringify(it)); e.dataTransfer.effectAllowed = 'copy';
+});
+$('libgrid').addEventListener('click', (e) => {
+  const it = libItems[+e.target.closest('button')?.dataset.i]; if (!it) return;
+  const empty = profile?.media.find((m) => !sources.some((x) => x.slot === m.address));
+  place({ library: it }, (empty || profile?.media[0])?.address);
+});
+$('grid').addEventListener('dragstart', (e) => { const b = e.target.closest('button'); if (b) e.dataTransfer.setData('application/x-gv-seed', b.dataset.i); });
+
+// One size control for every template: its own aspect choice as chips, or aspect chips over its width and height
+// (with "match picture" once a source is in), and a size class: Draft, HD (the template's own area), Max. A clip's
+// duration and frame rate as chips. The raw numbers stay in the drawer under node plumbing.
+const ratio = (label) => { const m = String(label).match(/(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)/); return m ? m[1] / m[2] : 1; };
+const wh = (area, r, m, lo = 64, hi = 4096) => [Math.sqrt(area * r), Math.sqrt(area / r)].map((x) => Math.max(lo, Math.min(hi, Math.round(x / m) * m)));
+const chip = (on, data, text, title = '') => `<button type="button" ${data} aria-pressed="${on}"${title ? ` title="${esc(title)}"` : ''}>${esc(text)}</button>`;
+const picAspect = () => sources.some((x) => x.slot === profile?.media[0]?.address) ? aspect : null;
+function sizeNow() {  // the current aspect and size class, from the values (or the template's own)
+  const z = profile.sizing;
+  if (z.kind === 'free') { const [w, h] = [values[z.width] ?? z.value[0], values[z.height] ?? z.value[1]]; return { r: w / h, f: w * h / z.area, w, h }; }
+  return { r: z.kind === 'choice' ? ratio(values[z.aspect] ?? z.value) : null, f: (values[z.area] ?? z.megapixels) / z.megapixels, choice: values[z.aspect] ?? z.value };
+}
+function renderSize() {
+  const z = profile?.sizing, c = profile?.clip; let html = '';
+  if (z) {
+    const now = sizeNow(), near = (a, b) => Math.abs(a - b) < 0.02, pic = picAspect();
+    if (z.kind === 'choice') html += z.choices.map((o) => chip(o === now.choice, `data-aspect="${esc(o)}"`, o.split(' (')[0], o)).join('');
+    if (z.kind === 'free') html += z.aspects.map(([l, r]) => chip(near(now.r, r) && !(pic && near(now.r, pic) && !near(pic, r)), `data-ratio="${r}"`, l)).join('');
+    if (pic && z.kind !== 'area') html += chip(near(now.r, z.kind === 'choice' ? ratio(nearestChoice(pic)) : pic) && !z.aspects?.some(([, r]) => near(r, pic)), 'data-match="1"', 'match picture');
+    html += '<span aria-hidden="true">·</span>' + Object.entries(z.classes).map(([name, f]) => chip(Math.abs(now.f - f) < f * 0.15, `data-class="${f}"`, name,
+      z.kind === 'free' ? wh(z.area * f, now.r, z.multiple, z.min, z.max).join('×') : `${+(z.megapixels * f).toFixed(2)} MP`)).join('');
+  }
+  if (c?.duration) html += '<span aria-hidden="true">·</span>' + c.duration.choices.map((d) => chip(+(values[c.duration.address] ?? c.duration.value) === d, `data-duration="${d}"`, `${d} s`)).join('');
+  if (c?.fps) html += c.fps.choices.map((r) => chip(+(values[c.fps.address] ?? c.fps.value) === +r, `data-fps="${r}"`, `${r} fps`)).join('');
+  $('size').innerHTML = html; $('size').setAttribute('aria-label', 'Size and length');
+}
+const nearestChoice = (r) => profile.sizing.choices.reduce((best, o) => Math.abs(Math.log(ratio(o) / r)) < Math.abs(Math.log(ratio(best) / r)) ? o : best);
+function setSize(r, f) {
+  const z = profile.sizing, now = sizeNow(); r ??= now.r; f ??= now.f;
+  if (z.kind === 'free') { const [w, h] = wh(z.area * f, r, z.multiple, z.min, z.max); values[z.width] = w; values[z.height] = h; }
+  else values[z.area] = +Math.max(z.min ?? 0.01, Math.min(z.max ?? 16, z.megapixels * f)).toFixed(2);
+}
+$('size').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  const z = profile.sizing, c = profile.clip, d = b.dataset;
+  if (d.aspect) values[z.aspect] = d.aspect;
+  if (d.ratio) setSize(+d.ratio);
+  if (d.match) { if (z.kind === 'choice') values[z.aspect] = nearestChoice(picAspect()); else setSize(picAspect()); }
+  if (d.class) setSize(null, +d.class);
+  if (d.duration) values[c.duration.address] = +d.duration;
+  if (d.fps) values[c.fps.address] = +d.fps;
+  renderSize(); renderDrawer(); renderTimeline(); soon();
+});
+
+// The clip timeline: for a clip template the picture slots become cards on a strip under the stage, each at its moment
+// (first frame at 0, last frame at the end, a guide at its own time); references sit apart with their role. Drop onto a
+// card from anywhere; drag a card along the strip to move it (a guide), onto another to swap them, off the strip to
+// remove it. Keys on a card: ← → move it 0.5 s (a fixed frame swaps with its neighbour), Delete removes, Enter picks a file.
+const timelined = () => profile?.kind === 'video' && profile.media.some((m) => m.address !== 'latent');
+const clipLength = () => { const d = profile?.duration || profile?.clip?.duration; return d ? +(values[d.address] ?? d.value) || 5 : 5; };
+const momentOf = (m) => m.moment ? +(values[m.moment.address] ?? m.moment.value) : m.at != null ? m.at * clipLength() : 0;
+function card(m) {
+  const s = sources.find((x) => x.slot === m.address), t = momentOf(m);
+  const where = m.chip ? m.chip : `at ${+t.toFixed(1)} s`;
+  const style = [m.chip ? '' : `left:${100 * Math.min(1, t / clipLength())}%`, s ? `background-image:url(${thumbs[s.id] || `source/${s.id}`})` : ''].filter(Boolean).join(';');
+  return `<button type="button" class="card${s ? ' has' : ''}" data-slot="${esc(m.address)}" draggable="${!!s}"${style ? ` style="${esc(style)}"` : ''}`
+    + ` aria-label="${esc(m.label)}, ${esc(where)}: ${s ? 'a picture; arrows move, Delete removes' : 'empty; drop or press Enter'}">`
+    + `${m.chip ? `<span class="chip">${esc(m.chip)}</span>` : ''}<span>${esc(m.label)}</span></button>`;
+}
+function renderTimeline() {
+  const on = timelined(); $('timeline').hidden = !on; $('tray').hidden = on;
+  if (!on) return;
+  const L = clipLength();
+  $('refs').innerHTML = profile.media.filter((m) => m.chip).map(card).join('');
+  $('track').innerHTML = profile.media.filter((m) => !m.chip).map(card).join('')
+    + [0, L / 2, L].map((t) => `<span class="tick" style="left:${100 * t / L}%">${+t.toFixed(1)} s</span>`).join('');
+}
+const cardOf = (el) => el?.closest?.('.card');
+const metaOf = (slot) => profile.media.find((m) => m.address === slot);
+function swapSlots(a, b) {
+  const A = sources.find((x) => x.slot === a), B = sources.find((x) => x.slot === b);
+  sources = sources.filter((x) => x !== A && x !== B).concat(A ? [{ ...A, slot: b }] : [], B ? [{ ...B, slot: a }] : []);
+}
+function timelineChanged(said) { epochV = v + 1; renderControls(); persist(); send(); if (said) $('say').textContent = said; }
+function removeSlot(slot) { sources = sources.filter((x) => x.slot !== slot); timelineChanged(`${metaOf(slot)?.label} removed`); }
+function moveTo(m, seconds) {
+  values[m.moment.address] = +Math.max(0, Math.min(clipLength(), seconds)).toFixed(1);
+  timelineChanged(`${m.label} at ${values[m.moment.address]} s`);
+}
+let draggedCard = null, droppedOnStrip = false;
+$('timeline').addEventListener('dragstart', (e) => {
+  const c = cardOf(e.target); if (!c) return;
+  draggedCard = c.dataset.slot; droppedOnStrip = false;
+  e.dataTransfer.setData('application/x-gv-card', c.dataset.slot); e.dataTransfer.effectAllowed = 'move';
+});
+$('timeline').addEventListener('dragend', () => {  // dropped off the strip: removed
+  if (draggedCard && !droppedOnStrip) removeSlot(draggedCard);
+  draggedCard = null;
+});
+$('timeline').addEventListener('dragover', (e) => { e.preventDefault(); cardOf(e.target)?.classList.add('over'); });
+$('timeline').addEventListener('dragleave', (e) => cardOf(e.target)?.classList.remove('over'));
+$('timeline').addEventListener('drop', (e) => {
+  e.preventDefault(); e.stopPropagation(); droppedOnStrip = true;
+  const target = cardOf(e.target), from = e.dataTransfer.getData('application/x-gv-card');
+  if (from) {
+    if (target && target.dataset.slot !== from) { swapSlots(from, target.dataset.slot); return timelineChanged(`${metaOf(from).label} and ${metaOf(target.dataset.slot).label} swapped`); }
+    const m = metaOf(from), r = $('track').getBoundingClientRect();
+    if (m?.moment && e.clientX >= r.left - 20 && e.clientX <= r.right + 20) moveTo(m, (e.clientX - r.left) / r.width * clipLength());
+    return;
+  }
+  if (target) place(dropped(e.dataTransfer), target.dataset.slot);
+});
+$('timeline').addEventListener('click', (e) => { const c = cardOf(e.target); if (c) { pickSlot = c.dataset.slot; $('file').click(); } });
+$('empty').addEventListener('click', (e) => { const b = e.target.closest('.addpic'); if (b) { pickSlot = b.dataset.slot; $('file').click(); } });
+$('timeline').addEventListener('keydown', (e) => {
+  const c = cardOf(e.target); if (!c) return;
+  const m = metaOf(c.dataset.slot), has = sources.some((x) => x.slot === m.address);
+  if ((e.key === 'Delete' || e.key === 'Backspace') && has) { e.preventDefault(); removeSlot(m.address); refocus(m.address); }
+  if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && has) {
+    e.preventDefault(); e.stopPropagation();
+    const by = e.key === 'ArrowRight' ? 1 : -1;
+    if (m.moment) moveTo(m, momentOf(m) + by * 0.5);
+    else {  // a fixed frame swaps with its neighbour on the strip
+      const order = profile.media.filter((x) => !x.chip).sort((a, b) => momentOf(a) - momentOf(b)), at = order.indexOf(m), other = order[at + by];
+      if (other) { swapSlots(m.address, other.address); timelineChanged(`${m.label} picture moved to the ${other.label}`); refocus(other.address); return; }
+    }
+    refocus(m.address);
+  }
+});
+const refocus = (slot) => requestAnimationFrame(() => $('timeline').querySelector(`.card[data-slot="${CSS.escape(slot)}"]`)?.focus());
+async function upload(blob) {
+  const r = await post('source', blob, { 'content-type': blob.type || 'image/png' });
+  if (!r?.ok) { if (r) phase('failed', { message: 'VorpalFusion could not keep that picture. Try another file.' }); return null; }
+  return (await r.json()).id;
+}
+const stage = $('stage');
+stage.addEventListener('dragover', (e) => { e.preventDefault(); stage.classList.add('drop'); });
+stage.addEventListener('dragleave', () => stage.classList.remove('drop'));
+stage.addEventListener('drop', (e) => {
+  e.preventDefault(); stage.classList.remove('drop');
+  if (e.dataTransfer.getData('application/x-gv-card')) return;  // a timeline card dragged off the strip: its dragend removes it
+  place(dropped(e.dataTransfer));
+});
+
+function control(c) {
+  const value = values[c.address] ?? c.value, name = esc(c.label), a = `data-a="${esc(c.address)}"`;
+  if (c.control === 'slider') return `<label class="row">${name} <span>${esc(value)}</span><input type="range" ${a} min="${c.min}" max="${c.max}" step="${c.step}" value="${esc(value)}"></label>`;
+  if (c.control === 'number') return `<label class="row">${name}<input type="number" ${a} step="${c.step}" value="${esc(value)}"></label>`;
+  if (c.control === 'switch') return `<label class="row switch"><input type="checkbox" role="switch" ${a}${value ? ' checked' : ''}> ${name}</label>`;
+  if (c.control === 'choice') return `<label class="row">${name}<select ${a}>${c.choices.map((o) => `<option${String(o) === String(value) ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select></label>`;
+  return `<label class="row">${name}<input type="text" ${a} value="${esc(value)}"></label>`;
+}
+function renderDrawer() {
+  const all = profile?.settings || [], shown = all.filter((c) => $('plumbing').checked || !c.advanced);
+  $('controls').innerHTML = shown.map(control).join('') || `<p>${all.length ? 'Only node plumbing here.' : 'This template has no settings.'}</p>`;
+}
+$('plumbing').addEventListener('change', renderDrawer);
+$('controls').addEventListener('input', (e) => {
+  const a = e.target.dataset.a; if (!a) return;
+  values[a] = e.target.type === 'checkbox' ? e.target.checked : ['range', 'number'].includes(e.target.type) ? +e.target.value : e.target.value;
+  if (e.target.type === 'range') e.target.previousElementSibling.textContent = e.target.value;
+  soon();
+});
+function toggleDrawer(open = $('drawer').hidden) {
+  $('drawer').hidden = !open; $('settings').setAttribute('aria-expanded', open);
+  if (open) { returnFocus = document.activeElement; renderDrawer(); $('drawerclose').focus(); } else (returnFocus || $('settings')).focus();
+}
+$('settings').addEventListener('click', () => toggleDrawer());
+$('drawerclose').addEventListener('click', () => toggleDrawer(false));
+$('st').addEventListener('input', () => { $('stv').textContent = $('st').value; soon(); });
+$('lp').addEventListener('input', () => { $('lpv').textContent = +$('lp').value || 'auto'; soon(); });
+$('prompt').addEventListener('input', typed);
+
+// The bridge, when Saddle frames the module: Saddle's box drives the template, settings and
+// pictures; the module keeps the stage, the seed field and the tree, and reports back.
+addEventListener('message', async (e) => {
+  if (!framed || e.source !== parent || !e.data || typeof e.data !== 'object') return;
+  const m = e.data;
+  if (m.type === 'live') { liveOn = !!m.on; if (liveOn) { phase('waiting'); send(); } else phase('idle'); ladderControls(); }
+  if (m.type === 'keep') keep();  // Saddle's Keep: the module answers with the highest rung's full recipe
+  if (m.type === 'template' && m.name) await useTemplate(m.name);
+  if (m.type === 'state' && m.state) await hostState(m.state);
+  if (m.type === 'source' && (m.src || m.rel)) {
+    const id = await fromHost(m.src, m.rel); if (!id) return;
+    const slot = m.slot || profile?.media[0]?.address;
+    sources = sources.filter((s) => s.slot !== slot).concat({ slot, id, ...(parents[id] ? { parent: parents[id] } : {}) });
+    if (slot === profile?.media[0]?.address) { epochV = v + 1; show(thumbs[id], 0, epochV); }
+    renderControls(); send();
+  }
+  if (m.type === 'busy') { hostBusy = !!m.busy; if (hostBusy) phase('busy', { ahead: m.ahead ?? 'jobs' }); else send(); }
+  if (m.type === 'theme') {
+    if (m.accent) document.documentElement.style.setProperty('--amber', m.accent);
+    if (m.scheme) document.documentElement.style.colorScheme = m.scheme;
+  }
+});
+const parents = {};  // picture id -> the Saddle library result it came from
+async function fromHost(src, rel) {  // a library picture: fetched once (by the sidecar, from Saddle's API, when it is a library rel), known by its rel
+  if (rel && rels[rel]) return rels[rel];
+  if (/^\/api\/artifacts\/[\w.-]+\/content$/.test(rel || '')) {
+    const r = await post('source/library', JSON.stringify({ rel }));
+    if (r?.ok) { const got = await r.json(); rels[rel] = got.id; parents[got.id] = got.parent; thumbs[got.id] = `source/${got.id}`; return got.id; }
+    if (!src) { phase('failed', { message: 'VorpalFusion could not fetch that library picture from Saddle.' }); return null; }
+  }
+  try {
+    const blob = await (await fetch(src)).blob();
+    const id = await upload(blob); if (!id) return null;
+    thumbs[id] = URL.createObjectURL(blob); if (rel) rels[rel] = id;
+    return id;
+  } catch { phase('failed', { message: 'Saddle sent a picture VorpalFusion could not read.' }); return null; }
+}
+async function hostState(st) {
+  if (st.template && st.template !== template) await useTemplate(st.template, { quiet: true });
+  if (typeof st.prompt === 'string') $('prompt').value = st.prompt;
+  if (Number.isFinite(st.seed)) seed = st.seed;
+  if (st.values && typeof st.values === 'object') values = { ...st.values };
+  if (Array.isArray(st.sources)) {
+    const next = [];
+    for (const [i, s] of st.sources.entries()) {
+      const slot = s.slot || profile?.media[i]?.address, id = s.id || (s.src || s.rel ? await fromHost(s.src, s.rel) : null);
+      if (slot && id) next.push({ slot, id, ...(parents[id] ? { parent: parents[id] } : {}) });
+    }
+    if (sorted(next) !== sorted(sources)) epochV = v + 1;
+    sources = next;
+  }
+  renderControls();
+  if (await checkSources()) send();
+}
+
+// Start: what the last visit left (template, words, seed, pictures, the tree), then the stream.
+document.body.classList.toggle('framed', framed);
+setAspect(aspect); $('seedv').value = seed;
+renderTree();
+if (snapOf(head)?.thumb) show(snapOf(head).thumb, 0, epochV - 1);  // last visit's picture, dimmed until a frame lands
+connect();
+</script>
+</body>
+</html>

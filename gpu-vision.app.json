@@ -1,0 +1,157 @@
+{
+  "schema": "saddle.app",
+  "id": "org.saddle.gpu-vision",
+  "title": "VorpalFusion",
+  "description": "The picture develops while you type: any template, live on your own GPU, settling to full quality when the words rest.",
+  "source": {
+    "repo": "vorpalfusion",
+    "path": "."
+  },
+  "licenses": {
+    "app": "Apache-2.0",
+    "workflow": "the template the creator chooses, under its own licence",
+    "models": "as listed by that template; the speed-up assets below under theirs"
+  },
+  "runs_on": {
+    "templates": "any",
+    "kinds": [
+      "image",
+      "video"
+    ],
+    "needs": [
+      "a prompt slot",
+      "a seed slot"
+    ],
+    "note": "The live profile comes from the template's slots (profile.py): a quarter megapixel, a quarter of its steps (at least 4), enhancers off, a 2 s clip. The settle refines the live frame at the template's size (decoded, resized in pixel space, encoded, refined), or renders the template unchanged where it cannot."
+  },
+  "interface": {
+    "module": "live.html",
+    "frame": "sandboxed",
+    "accent": "#f5a524",
+    "chrome": [
+      "live",
+      "keep",
+      "gpu_status",
+      "cancel"
+    ]
+  },
+  "sidecar": {
+    "command": [
+      "python",
+      "live.py",
+      "--api",
+      "{endpoint.api_unthrottled}",
+      "--comfy",
+      "{endpoint.url}",
+      "--saddle",
+      "{saddle.url}",
+      "--port",
+      "{port}"
+    ],
+    "neighbour_vram_headroom_gb": 16,
+    "vram_note": "Dynamic VRAM has no pin, and an idle process keeps what it staged: Saddle starts every other ComfyUI on the card with --vram-headroom 16 (one live family resident: Z-Image int8 with its encoder about 14.5 GB, FLUX 3 Klein about 11 GB, plus 2)"
+  },
+  "bridge": {
+    "to_module": [
+      "live",
+      "template",
+      "state",
+      "source",
+      "busy",
+      "theme",
+      "keep"
+    ],
+    "from_module": [
+      "state",
+      "settled",
+      "status",
+      "keep"
+    ]
+  },
+  "ladder": {
+    "rungs": {
+      "image": [
+        "live",
+        "settled",
+        "final",
+        "2k",
+        "4k"
+      ],
+      "video": [
+        "draft",
+        "settled",
+        "final",
+        "smooth"
+      ]
+    },
+    "hires": {
+      "default": "seedvr2",
+      "image_flux3_klein_distilled_t2i": "seedvr2",
+      "image_z_image_turbo": "seedvr2",
+      "image_krea2_turbo_t2i": "seedvr2"
+    },
+    "hires_note": "Measured both ways (checks/ladder.py, README 'The ladder, measured'): Saddle's SeedVR2 upscale tool adds detail the tiled refine smooths away, at 2-6x less GPU time; a template may name 'refine' (Lanczos, tiled encode, its sampler at denoise 0.3, tiled decode) instead.",
+    "tools": {
+      "seedvr2": "utility_seedvr2_3b_int8_upscale_image",
+      "interpolate": "utility_video_frame_interpolation"
+    },
+    "interpolate_multiplier": 2
+  },
+  "edit_templates": {
+    "image_flux3_klein_distilled_t2i": "image_flux3_klein_distilled_image_edit"
+  },
+  "finetunes": [],
+  "finetunes_note": "Fine-tunes of a template's own model file, offered as its Model choice where the template uses `replaces` and the endpoint has `name` in `folder`: {name, folder, replaces, label}. A user's own entries go in ~/.config/gpu-vision/finetunes.json (the same shape), read beside these.",
+  "edit_templates_note": "The family's edit template per text-to-image template: F (pin as reference) puts the picture on stage into the edit template's first picture slot and switches to it.",
+  "assets": [
+    {
+      "kind": "preview_decoder",
+      "folder": "vae_approx",
+      "name": "taef1_decoder.safetensors",
+      "for": "Z-Image and FLUX.1-latent models",
+      "source": "https://github.com/madebyollin/taesd"
+    },
+    {
+      "kind": "preview_decoder",
+      "folder": "vae_approx",
+      "name": "taef2_decoder.safetensors",
+      "for": "FLUX.2 klein and FLUX 3 Klein",
+      "source": "https://github.com/madebyollin/taesd"
+    },
+    {
+      "kind": "preview_decoder",
+      "folder": "vae_approx",
+      "name": "taeh3.safetensors",
+      "for": "MiniMax H3 and FastH3; a draft clip decodes its frames with it (0.26 s off a 3.8 s FastH3 draft, the sound unchanged)",
+      "drafts": [
+        "minimax_h3_video_vae_int8_convrot.safetensors"
+      ],
+      "source": "https://github.com/madebyollin/taehv"
+    },
+    {
+      "kind": "live_model",
+      "folder": "diffusion_models",
+      "name": "z_image_turbo_int8_convrot.safetensors",
+      "replaces": "z_image_turbo_bf16.safetensors",
+      "for": "Z-Image Turbo, live and settle: half the weights, 17 % faster at 0.25 MP, 0.99 like bf16 on the same seeds (checks/precision.py)",
+      "source": "https://huggingface.co/Comfy-Org/Z-Image-Turbo"
+    }
+  ],
+  "not_imported": [
+    "Live runs are not plans: they render at live size while the Live switch is on and the GPU is free, and none enters the library. Keep stages the settled frame as a normal plan."
+  ],
+  "choices_made_here": [
+    "Latest wins: a live job runs out and the next takes the newest words, so frames never queue; a new template or picture stops it, and typing stops only the settle.",
+    "Words go out on a word boundary (the first word as it is typed) and whole once the keys rest 250 ms; the settle waits for the whole words.",
+    "A live image's graph stops at the sampler: its frame is the last step preview, so ComfyUI decodes nothing and writes no PNG for it.",
+    "Every job carries a label in its graph (gpu-vision, sidecar, lane), so the loop knows whose job is ahead and idle work yields.",
+    "No silence goes unexplained: a job silent for 1 s, or words with no frame for 1.5 s, say what they wait on.",
+    "Choosing a template or a picture warms it with a 1-step job, so the first typed frame does not pay the load.",
+    "The settle upscales in pixel space (decode, Lanczos, encode, refine): a latent upscale cracked faces on FLUX 3.",
+    "Every frame carries the state version it was made for; the page drops frames for an older template or picture and dims a picture whose words moved on.",
+    "A clip loops and each new draft flows in at the playhead, so motion carries on rather than restarting.",
+    "The ladder climbs one picture, never a new one: every rung keeps the words, seed, pictures and settings, runs below live and settle, and lands as a child snapshot; Keep takes the highest.",
+    "Split panels are one batched job; a panel is (seed, index), and only the picked one settles.",
+    "Every template shows one size control from its slots: its own aspect choice, or aspect chips over its width and height."
+  ]
+}

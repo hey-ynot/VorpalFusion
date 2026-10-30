@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VorpalFusion host harness</title>
+<link rel="icon" href="data:,">
+<style>
+  body { margin: 0; height: 100vh; display: grid; grid-template-columns: 280px minmax(0, 1fr); background: #111; color: #ddd; font: 13px/1.4 system-ui, sans-serif; }
+  aside { display: grid; align-content: start; gap: 8px; padding: 12px; overflow: auto; border-right: 1px solid #333; }
+  h1 { margin: 0; font-size: 14px; }
+  textarea, select { width: 100%; background: #1a1a1a; color: #ddd; border: 1px solid #333; border-radius: 6px; }
+  iframe { width: 100%; height: 100%; border: 0; }
+  pre { margin: 0; white-space: pre-wrap; font-size: 11px; color: #9a9; }
+</style>
+</head>
+<body>
+<aside>
+  <h1>Saddle stand-in</h1>
+  <label><input type="checkbox" id="live"> Live (the confirmation)</label>
+  <select id="template" aria-label="Template"></select>
+  <textarea id="words" rows="3" aria-label="Words">a lighthouse on a cliff at dusk</textarea>
+  <label>Picture <input type="file" id="pic" accept="image/*"></label>
+  <button type="button" id="state">Send the turn state</button>
+  <label><input type="checkbox" id="busy"> GPU busy</label>
+  <button type="button" id="theme">Accent: teal</button>
+  <pre id="log"></pre>
+</aside>
+<!-- An opaque-origin sandbox, the way Saddle frames an interface module. -->
+<iframe id="module" title="VorpalFusion" sandbox="allow-scripts" src="/"></iframe>
+<script>
+const $ = (id) => document.getElementById(id);
+const frame = $('module');
+// window.host drives the bridge for checks: host.post(type, data); host.got holds every message the module sent.
+window.host = { got: [], post(type, data = {}) { frame.contentWindow.postMessage({ type, ...data }, '*'); } };
+addEventListener('message', (e) => {
+  if (e.source !== frame.contentWindow || e.data?.source !== 'gpu-vision') return;
+  host.got.push(e.data);
+  const { type, ...rest } = e.data;
+  const brief = type === 'settled' ? `seed ${rest.snapshot?.seed}, parent ${rest.snapshot?.parent}` : type === 'status' ? rest.text : rest.state?.prompt;
+  $('log').textContent = `${type}: ${brief}\n` + $('log').textContent.slice(0, 4000);
+});
+fetch('/templates').then((r) => r.json()).then((rows) => {
+  $('template').innerHTML = rows.map((t) => `<option value="${t.name}">${t.group} · ${t.title}</option>`).join('');
+});
+let picture = null;
+$('pic').addEventListener('change', async () => {
+  const file = $('pic').files[0]; if (!file) return;
+  picture = await new Promise((done) => { const r = new FileReader(); r.onload = () => done(r.result); r.readAsDataURL(file); });
+  host.post('source', { src: picture, rel: `library/${file.name}` });
+});
+$('live').addEventListener('change', () => host.post('live', { on: $('live').checked }));
+$('template').addEventListener('change', () => host.post('template', { name: $('template').value }));
+$('state').addEventListener('click', () => host.post('state', { state: {
+  template: $('template').value, prompt: $('words').value, values: {},
+  sources: picture ? [{ rel: `library/${$('pic').files[0].name}`, src: picture }] : [] } }));
+$('busy').addEventListener('change', () => host.post('busy', { busy: $('busy').checked, ahead: 3 }));
+$('theme').addEventListener('click', () => host.post('theme', { accent: '#2bd4bd' }));
+</script>
+</body>
+</html>

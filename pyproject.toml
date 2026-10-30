@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vorpalfusion"
+version = "0.1.0"
+description = "VorpalFusion: the picture develops while you type, on your own GPU and any ComfyUI template"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+dependencies = [
+    "comfy-sdk~=0.5.0",
+    "httpx>=0.27",
+    "pillow>=11.3",
+    "uvicorn>=0.30",
+]
+
+[project.scripts]
+vorpalfusion = "vorpalfusion:main"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["vorpalfusion.py", "live.py", "profile.py", "vf_templates.py", "live.html", "host.html", "gpu-vision.app.json"]
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["checks"]
