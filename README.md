@@ -1,4 +1,23 @@
+<div align="center">
+
 # VorpalFusion
+
+**The picture keeps up with you.**
+
+Live image and clip generation over any ComfyUI template, on your own GPU.
+
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
+[![ComfyUI 0.43+](https://img.shields.io/badge/ComfyUI-0.43%2B-172dd7)](https://github.com/comfyanonymous/ComfyUI)
+[![comfy-sdk 0.5](https://img.shields.io/badge/comfy--sdk-0.5-172dd7)](https://pypi.org/project/comfy-sdk/)
+[![Open weights only](https://img.shields.io/badge/models-open%20weights%20only-f5a524)](#models)
+[![#OpenSourceHiggsfield](https://img.shields.io/badge/%23-OpenSourceHiggsfield-black)](docs/demo.md)
+
+<img src="docs/media/vorpalfusion.gif" alt="Clips made in VorpalFusion: a felt jellyfish diorama orbiting, an astronaut riding a jellyfish past Saturn, a fox shaking off snow, an accordion astronaut on the moon" width="720">
+
+<sub>FLUX 3 Klein · FastH3 · LTX-2.5 · Z-Image · Krea 2 · SeedVR2 — all running locally through ComfyUI</sub>
+
+</div>
 
 **The art takes shape with your ideas in real time, as you type.** VorpalFusion is an app that runs on any local GPU via the ComfyUI SDK. VorpalFusion provides immediate feedback, showing what your words, settings and pictures render into before you have to ask or queue. Every key you press is a frame; when you stop typing, the art settles into full
 quality in seconds and continues to climb to Final, 2K and 4K. Branch easily into alternate concepts of the same baseline until you've sliced your exact idea directly into the ether.
