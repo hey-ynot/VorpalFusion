@@ -4,7 +4,7 @@
 
 **Slice through image and video edits before they ever settle.**
 
-Live image and clip generation over any ComfyUI template, on your own GPU.
+A live canvas for ComfyUI: shape an image or video while typing, then carry it into refinement
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
