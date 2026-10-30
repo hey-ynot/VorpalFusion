@@ -360,7 +360,8 @@
   </div>
   <div class="field" id="field" inert aria-label="Seed field">
     <div class="fieldbar"><span class="chips" id="fieldmode" role="group" aria-label="Field"><button type="button" data-m="seeds" aria-pressed="true">Seeds</button><button type="button" data-m="variations" aria-pressed="false">Variations</button></span>
-      <label id="varyrow" hidden>strength <span id="varyv">0.4</span><input id="vary" type="range" min="0.1" max="0.8" step="0.05" value="0.4" aria-label="Variation strength"></label></div>
+      <label id="varyrow" hidden>strength <span id="varyv">0.4</span><input id="vary" type="range" min="0.1" max="0.8" step="0.05" value="0.4" aria-label="Variation strength"></label>
+      <button type="button" id="fieldclose" title="Close the seed field (Esc)">Close</button></div>
     <div class="grid" id="grid"></div></div>
   <div class="ab" id="ab" hidden role="dialog" aria-label="Side by side">
     <figure><img id="abA" alt=""><figcaption id="abAc"></figcaption></figure>
@@ -1114,6 +1115,7 @@ function toggleField(open = $('field').inert) {
   else (returnFocus || $('seeds')).focus();
 }
 $('seeds').addEventListener('click', () => toggleField());
+$('fieldclose').addEventListener('click', () => toggleField(false));
 $('grid').addEventListener('click', (e) => {
   const one = field[+e.target.closest('button')?.dataset.i]; if (!one) return;
   toggleField(false);
@@ -1356,7 +1358,7 @@ addEventListener('keydown', (e) => {
   if (/^[1-4]$/.test(e.key) && !e.target.closest?.('#timeline')) pick(+e.key - 1);
   if (e.key === 'r' || e.key === 'R') reroll(e.shiftKey);
   if (e.key === 'e' && !$('enrich').hidden) $('enrich').click();
-  if (e.key === 'g') toggleField();
+  if (e.key === 'g' && !$('seeds').disabled) toggleField();
   if (e.key === 's') snapshot(false);
   if (e.key === 'b' && !e.repeat) showCompare(compareTarget());
 });
@@ -1450,6 +1452,10 @@ function renderControls() {
   $('model').value = model || '';
   paintFlow(); $('boxbtn').hidden = !profile?.layout; $('refbtn').hidden = !(profile?.kind === 'image' && (profile.edits || profile.edit_template)); $('pinbtn').hidden = !profile?.pin; if (!profile?.layout && !profile?.pin) setTool(null); paintBoxes();
   renderSize(); renderTimeline(); layoutPanels(); ladderControls();
+  // The seed field renders nine pictures while the loop is idle; a clip costs seconds each, so clips have none.
+  $('seeds').disabled = profile?.kind === 'video';
+  $('seeds').title = profile?.kind === 'video' ? 'The seed field is for pictures; a clip renders one seed at a time (R picks a new one)' : 'The seed field (G)';
+  if ($('seeds').disabled && !$('field').inert) toggleField(false);
   $('tknobs').innerHTML = (profile?.knobs || []).map((k, i) => `<label title="${esc(k.address)}">${esc(k.label)} <span>${values[k.address] ?? k.value}</span>`
     + `<input type="range" data-i="${i}" min="${k.min}" max="${k.max}" step="${k.step}" value="${values[k.address] ?? k.value}" aria-label="${esc(k.label)}"></label>`).join('');
   renderDrawer();

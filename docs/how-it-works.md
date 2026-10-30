@@ -412,6 +412,42 @@ Sampling is next (Krea 2 most; FLUX 3 least), then the encoder on word changes. 
 4 steps cost 0.55-1.2 s streamed against 0.16-0.48 s resident, which is why a VRAM contract on the neighbours and
 smaller live files come before any other speed work.
 
+## Where a clip's time goes
+
+Pika H3 Flex text to video on an RTX 5090 (MiniMax H3's pruned int8 file, Pika's bf16 LoRA at strength 1, six
+`ManualSigmas` steps, the 32B NVFP4 text encoder), ComfyUI's history on fresh seeds, the same seed across variants:
+
+| | Before | After |
+|---|---|---|
+| Clip at the template's size (5 s, 16:9 0.98 MP) | 85 s (12.8 s a step) | 52 s (7.2 s a step) |
+| Clip at FastH3's size (5 s, 1:1 0.4 MP) | 26.6 s (2.9 s a step) | 15.3 s (2.0 s a step); FastH3's own template 19.6 s |
+| Draft, seed changed (2 s, 0.1 MP) | 1.8 s | 1.3 s |
+| FL2VA draft from a 0.9 MP first frame, seed changed | 43-56 s (6.5 s a step) | 1.5-3.9 s (0.1 MP) |
+
+- **Attention is the clip.** Dense PyTorch attention over a 5 s clip is most of each step. ComfyUI's INT8 attention
+  (`ModelAttentionBackend`, "comfy kitchen attention", which FastH3's template already sets) takes a step from 12.8 s
+  to 7.2 with the same picture (SSIM 0.82 and 0.69 against the dense clip on two prompts, where another seed scores
+  0.55), so a clip's draft and settle use it unless the template sets its own attention; Final renders the template as
+  tuned. LTX 2.5's clip: 19.0 s to 17.8. At a draft's 0.1 MP it neither helps nor hurts. Training-free sparse attention
+  (`BlockSparseAttention`, sol-attn, tau 1.0-1.6) runs 4.6-6.4 s a step depending on the content, and moves the
+  picture further (SSIM 0.63-0.69), so it is not the default.
+- **The LoRA costs nothing while the model is resident.** Without the LoRA the same clip steps at 12.9 s. Dynamic VRAM
+  applies the LoRA once to each weight it holds; a weight it streams from host RAM gets the LoRA again on every step.
+  With a neighbouring ComfyUI holding 5 GB, a seed-changed draft took 3.75 s with the LoRA and 1.25 s without it, and a
+  words-changed draft 7.8 s against 3.0; with the card free both run at 1.2 s and 2.9 s. Headroom on the neighbours
+  (above) is the cure. A merged file is not: requantizing the int8 weights after adding the LoRA moves each weight
+  about twice as far as the LoRA does (a merged file drew a different clip, SSIM 0.53), and an fp8 base requantizes
+  more coarsely still.
+- **The text encoder** re-runs on each word change: 1.6-2.2 s at a draft, partly streamed (the 15 GB encoder and the
+  20 GB transformer do not both fit beside the decoders).
+- **Fewer knots for drafts.** Six steps at four (1000/750/250/40) hold the draft's composition (SSIM 0.52-0.94 against
+  the six-step draft, 0.43-0.71 for another seed); three recompose it. LTX 2.5 recomposes when thinned, so only the
+  templates the manifest's `thin_drafts` lists thin.
+- **A clip sized by its picture.** Pika FL2VA has no size control: its latent takes the first frame's size, so its
+  draft drew a 2 s clip at the picture's full size. A draft now takes such a template's pictures at the live size.
+- The full clip's fixed part (the full VAE decode and the MP4) is 7-8 s. Smooth (18.5 s against FastH3's 8.2) is
+  the interpolation tool over 2.45 times the pixels.
+
 ## The loop, change by change
 
 `checks/check.mjs --live` types "a woman in a red coat walking through neon rain at night" at 10 characters a second on

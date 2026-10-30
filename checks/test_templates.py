@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import live  # noqa: E402  (beside this folder)
-from profile import Profile  # noqa: E402
+from profile import Profile, thinned  # noqa: E402
 from vf_templates import gaps  # noqa: E402
 
 FIXTURES = json.loads((Path(__file__).parent / "templates.json").read_text())
@@ -61,3 +61,26 @@ def test_gaps():
     missing, swaps = gaps(graph, info)
     assert missing == ["CustomNode", "PartnerImageNode (a partner API node)", "absent.safetensors"], missing
     assert swaps == {"krea2_turbo_bf16.safetensors": "krea2_turbo_fp8_scaled.safetensors"}, swaps
+
+
+def test_a_clip_attends_with_int8_unless_its_template_picks_its_own():
+    """Draft and settled clips get the attention backend in front of every guider; Final and a template with its own
+    attention node (FastH3) keep theirs. A hand-written schedule thins for a draft only."""
+    state = {"prompt": "a fox", "seed": 1, "sources": []}
+    h3 = Profile(FIXTURES["records"]["video_minimax_h3_t2v"])
+    h3.attention = True
+    for settle in (False, True):
+        graph, _ = h3.build(state, settle=settle)
+        guiders = [n for n in graph.values() if "Guider" in n["class_type"]]
+        assert guiders and all(graph[g["inputs"]["model"][0]]["class_type"] == "ModelAttentionBackend" for g in guiders)
+    assert not any(n["class_type"] == "ModelAttentionBackend" for n in h3.build(state, settle=True, rung="final")[0].values())
+    fast = Profile(FIXTURES["records"]["video_fastvideo_fasth3_t2v"])
+    fast.attention = True
+    assert sum(n["class_type"] == "ModelAttentionBackend" for n in fast.build(state, settle=False)[0].values()) == 1
+    assert thinned("1.0, 0.972973, 0.923077, 0.8, 0.571429, 0.333333, 0.0") == "1.0, 0.972973, 0.8, 0.333333, 0.0"
+    assert thinned("1.0, 0.5, 0.0") == "1.0, 0.5, 0.0"
+    ltx = Profile(FIXTURES["records"]["video_ltx2_5_t2v"])  # not in the manifest's thin_drafts: its own knots
+    knots = [n["inputs"]["sigmas"] for n in ltx.wf.values() if n["class_type"] == "ManualSigmas"]
+    assert knots and [n["inputs"]["sigmas"] for n in ltx.build(state, settle=False)[0].values() if n["class_type"] == "ManualSigmas"] == knots
+    ltx.thin = True
+    assert [n["inputs"]["sigmas"] for n in ltx.build(state, settle=False)[0].values() if n["class_type"] == "ManualSigmas"] == [thinned(k) for k in knots]

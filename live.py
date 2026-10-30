@@ -283,6 +283,8 @@ class Live:
                 profile.finetunes = [entry for entry in self._finetunes() if entry.get("replaces") in files and entry.get("label")
                                      and entry.get("name") in await self._models(http, entry.get("folder", "diffusion_models"))]
             profile.sized = await self._has("GetLatentSize")
+            profile.attention = await self._has("ModelAttentionBackend")
+            profile.thin = name in MANIFEST["thin_drafts"]["templates"]
             self.profiles[name] = profile
         return self.profiles[name]
 

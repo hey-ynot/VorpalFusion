@@ -43,6 +43,11 @@ FINAL_MTP = ""  # the Final's prompt enhancer's mtp ("auto": speculative decodin
 FINAL_DENOISE = 0.3  # how much Final may redraw the settled frame (its enhancer's words, its full steps): detail only
 HIRES_DENOISE = 0.3  # the hi-res refine: the template's own schedule, its last part, over the upscaled Final
 HIRES = {"2k": 2048, "4k": 4096}  # the long side of each hi-res rung
+# A clip's model attends with ComfyUI's INT8 attention unless its template picks an attention node of its own (FastH3
+# does). Pika H3 Flex's 5 s clip at 0.98 MP on an RTX 5090: 12.8 s a step dense, 7.2 with it, the same picture (SSIM
+# 0.82 and 0.69 on two prompts, where another seed scores 0.55); at a draft's 0.1 MP it neither helps nor hurts.
+ATTENTION = {"class_type": "ModelAttentionBackend", "inputs": {"attention": "comfy kitchen attention"}}
+ATTENTION_NODES = ("ModelAttentionBackend", "BlockSparseAttention")
 TILE = {"tile_size": 512, "overlap": 64, "temporal_size": 64, "temporal_overlap": 8}  # ComfyUI's tiled VAE defaults
 ASPECTS = [("1:1", 1.0), ("4:5", 0.8), ("3:4", 0.75), ("9:16", 9 / 16), ("16:9", 16 / 9), ("21:9", 21 / 9)]
 SIZE_CLASSES = {"Draft": 0.25, "HD": 1.0, "Max": 2.0}  # of the template's own area; Max is a fixed 2x (a ceiling calibrated per GPU would fit each card)
@@ -75,6 +80,23 @@ def title(record: dict[str, Any]) -> str:
     return text[:1].upper() + text[1:]
 
 
+def live_steps(steps: int) -> int:
+    return max(2, steps // 2) if steps <= 4 else min(steps, max(4, round(steps / 4)))
+
+
+def thinned(sigmas: str) -> str:
+    """A hand-written schedule (`ManualSigmas`) at the live-steps count: the first knot, then every other one counted
+    back from the last step. Whether a draft holds its picture this way is measured per template (the manifest's
+    `thin_drafts`): Pika H3 Flex's six steps at four (1000/750/250/40) do, where three recompose it; LTX 2.5's two
+    stages thinned recompose it too, so it keeps its own."""
+    knots = [knot.strip() for knot in sigmas.split(",") if knot.strip()]
+    n = len(knots) - 1
+    if n < 2:
+        return sigmas
+    keep = sorted({0} | {max(0, n - 1 - 2 * j) for j in range(live_steps(n) - 1)})
+    return sigmas if len(keep) >= n else ", ".join([knots[i] for i in keep] + [knots[-1]])
+
+
 class Profile:
     def __init__(self, record: dict[str, Any]) -> None:
         self.name = record["name"]
@@ -103,12 +125,14 @@ class Profile:
         # a long schedule holds its picture at a quarter of its steps but not below 4 (Krea 2 falls apart at 2);
         # a short distilled one (4 steps or fewer) holds at half, at least 2 (FLUX.2 klein keeps likeness at 2).
         steps = int(self.size["steps"][0]) if "steps" in self.size else None
-        self.live_steps = None if steps is None else max(2, steps // 2) if steps <= 4 else min(steps, max(4, round(steps / 4)))
+        self.live_steps = None if steps is None else live_steps(steps)
         # The installed precision Saddle stages for a missing file (precision variants).
         self.swaps = {gap["detail"].split("/")[-1]: gap["uses"]
                       for gap in record.get("compatibility", {}).get("gaps", []) if gap.get("kind") == "model_variant"}
         self.finetunes: list[dict[str, Any]] = []  # the Model choices the endpoint has for this template's files (the sidecar fills it)
         self.drafts: dict[str, str] = {}  # a video VAE file -> the tiny decoder a draft clip decodes with (the sidecar fills it)
+        self.attention = False  # the endpoint has ATTENTION's node (the sidecar sets it)
+        self.thin = False  # a draft thins its hand-written schedule (`thinned`; the sidecar sets it from the manifest)
         self.sized = False  # the endpoint has GetLatentSize: a live graph's output is the latent's size, not the latent as text
         self.tuned = True  # a measured family (the sidecar sets it): else the generic profile, at the smallest live size
 
@@ -431,6 +455,9 @@ class Profile:
             if self.live_steps is not None:
                 node, key = self.size["steps"][1]
                 graph[node]["inputs"][key] = state.get("live_steps") or self.live_steps
+            for node in graph.values() if self.thin else ():  # a schedule written knot by knot has no steps slot
+                if node["class_type"] == "ManualSigmas" and isinstance(node["inputs"].get("sigmas"), str):
+                    node["inputs"]["sigmas"] = thinned(node["inputs"]["sigmas"])
             if "megapixels" in self.size:
                 self._scale(graph, self.live_size(state))
             for address in self.enhancers():
@@ -443,8 +470,12 @@ class Profile:
                     self._set(graph, slot["address"], LIVE_SECONDS)
             if self.kind == "video":
                 self._tiny(graph)
+                if "megapixels" not in self.size:
+                    self._shrink(graph)
             if state.get("lock") and panels == 1 and self.kind == "image" and not any(s["slot"] == LATENT for s in state.get("sources") or []):
                 self._lock(graph, state["lock"])
+        if self.kind == "video" and rung != "final":  # Final renders the template as its authors tuned it
+            self._attend(graph)
         takes: list[tuple[str, str, str]] = self._pin(graph, state.get("pin")) if self.kind == "image" else []
         for source in state.get("sources") or []:
             if source["slot"] == LATENT and not self.edits:
@@ -807,6 +838,28 @@ class Profile:
                 up = next((v for v in graph[up[0]]["inputs"].values() if isinstance(v, list) and len(v) == 2), None)
             if isinstance(up, list) and up[0] in graph:
                 self._sink(graph, node_id, graph[up[0]]["inputs"]["samples"])
+
+    def _shrink(self, graph: dict[str, Any]) -> None:
+        """A clip with no size of its own takes its pictures' size (Pika H3 Flex FL2VA): its draft takes them at the live
+        size, or a 2 s draft from a 0.9 MP picture runs 6.5 s a step instead of 0.2."""
+        loads = {node for item in self.media for node, _key in (self._slot(item["address"]) or {}).get("targets", []) if node in graph}
+        for load in loads:
+            for node in graph.values():
+                for key, link in node["inputs"].items():
+                    if link == [load, 0]:
+                        node["inputs"][key] = [f"gv:small:{load}", 0]
+            graph[f"gv:small:{load}"] = {"class_type": "ImageScaleToTotalPixels", "inputs": {
+                "image": [load, 0], "upscale_method": "area", "megapixels": LIVE_MEGAPIXELS["video"], "resolution_steps": 1}}
+
+    def _attend(self, graph: dict[str, Any]) -> None:
+        """ATTENTION between each guider or sampler and its model, when the template sets no attention of its own."""
+        if not self.attention or any(node["class_type"] in ATTENTION_NODES for node in graph.values()):
+            return
+        for node in list(graph.values()):
+            model = node["inputs"].get("model")
+            if isinstance(model, list) and ("Guider" in node["class_type"] or node["class_type"].startswith("KSampler")):
+                graph[f"gv:attention:{model[0]}"] = {"class_type": ATTENTION["class_type"], "inputs": {**ATTENTION["inputs"], "model": model}}
+                node["inputs"]["model"] = [f"gv:attention:{model[0]}", 0]
 
     def _tiny(self, graph: dict[str, Any]) -> None:
         """A draft clip decodes its frames with the tiny decoder paired with its VAE file, untiled; the sound keeps its own."""
