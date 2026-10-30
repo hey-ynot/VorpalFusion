@@ -112,6 +112,8 @@ sharp step previews). A **VorpalFusion** tab appears in ComfyUI's sidebar with t
 VorpalFusion button in the top bar (and Extensions → Open VorpalFusion) opens the page in its own browser tab, at
 `<ComfyUI address>/vorpalfusion/`. It works wherever ComfyUI is reached, remotely included.
 
+It also appears in ComfyUI's **Apps** panel: the pack adds `VorpalFusion.app.json`, plus one app per tuned family whose models the endpoint has (FLUX 3 Klein, Z-Image, …), to each user's workflows folder once, never overwriting a file you edited or bringing back one you deleted. Opening one shows VorpalFusion on that template inside App Mode.
+
 Inside ComfyUI the endpoint is that ComfyUI, the v2 API runs in-process (comfy-api-proxy under
 `/vorpalfusion/api/v2`, its preview throttle off), Keep saves into ComfyUI's output folder (`output/vorpalfusion/`),
 the templates are ComfyUI's own, and the node pack below is loaded with it. A first visit opens on FLUX 3 Klein (or

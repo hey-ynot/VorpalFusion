@@ -1151,7 +1151,7 @@ if (!process.argv.includes('--live')) {
     return [...new Set(got)].join(', ');
   });
 
-  await check('under a path prefix, as ComfyUI serves it: a first visit lands a picture, every request stays under the prefix, a same-origin frame is the page itself', async () => {
+  await check('under a path prefix, as ComfyUI serves it: a first visit lands a picture, every request stays under the prefix, a same-origin frame is the page itself, ?template= opens on that template', async () => {
     const { context: c, page } = await open({}, 'vorpalfusion/');
     const origin = new globalThis.URL(URL).origin, asked = [];
     c.on('request', (r) => { const u = new globalThis.URL(r.url()); if (u.origin === origin) asked.push(u.pathname); });
@@ -1171,6 +1171,10 @@ if (!process.argv.includes('--live')) {
     assert(await frame.locator('#template').isVisible(), 'a same-origin frame took the page for a Saddle module (chooser hidden)');
     assert(!/Live is off/.test(await frame.locator('#status').textContent()), 'a same-origin frame waits for a host');
     await shot(page, 'prefix-sidebar');
+    // a ComfyUI app opens the page on its template (?template=), over the template the last visit left
+    await page.evaluate(() => { document.getElementById('side').src = '/vorpalfusion/?template=image_z_image_turbo'; });
+    await page.waitForFunction(() => document.getElementById('side').contentDocument?.getElementById('template')?.value === 'image_z_image_turbo', null, { timeout: 15000 })
+      .catch(async () => { throw new Error(`?template= did not choose it: ${await frame.locator('#template').inputValue()}`); });
     await c.close();
     return `${asked.length} requests under /vorpalfusion/; starter "${starter.slice(0, 40)}…"`;
   });

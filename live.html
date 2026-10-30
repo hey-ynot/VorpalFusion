@@ -447,7 +447,7 @@ window.gvLog = [];  // displayed frames {t, v, kind, stage}, for checks
 
 // The turn: what the sidecar renders.
 const saved = load('gv.state', {});
-let templates = [], profile = null, template = saved.template || '';
+let templates = [], profile = null, template = saved.template || '', asked = new URLSearchParams(location.search).get('template');
 let seed = saved.seed ?? Math.floor(Math.random() * 2 ** 31), values = saved.values || {}, sources = saved.sources || [];
 let aspect = saved.aspect || 1, liveOn = !framed, hostBusy = false, timer = 0;
 let panels = saved.panels || 1, panel = null, panelSet = null;  // split panels: how many, the one picked (it settles), the batch on stage
@@ -1397,6 +1397,10 @@ async function resync() {
     call('library').then((lib) => { $('libbtn').hidden = !lib?.ok; });  // no Saddle, no library
   }
   const choosable = templates.filter((t) => !t.checking);
+  if (asked) {  // a ComfyUI app opened the page on its template (?template=), once
+    const name = asked; asked = null;
+    if (choosable.some((t) => t.name === name) && await useTemplate(name)) return;
+  }
   if (choosable.some((t) => t.name === template)) return useTemplate(template);
   // A first visit: the default, else the next tuned picture template this ComfyUI has the files for.
   const first = choosable.filter((t) => t.group === 'Image' && !t.untuned)
