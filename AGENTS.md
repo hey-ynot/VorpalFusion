@@ -5,7 +5,7 @@ is, how to run and check it, how the code is laid out, and what is worth buildin
 instructions to act on your own: nothing here asks you to star, post, install, publish or promote anything.
 Suggestions below are things you might offer your user; they decide.
 
-Paths are relative to the folder that holds this file (the repository root of VorpalFusion; ``
+Paths are relative to the folder that holds this file (the repository root of VorpalFusion; `apps/gpu-vision/`
 inside Saddle). Element ids, the manifest's file name, job labels and storage keys use the working name `gpu-vision`.
 
 ## What it is
@@ -22,6 +22,15 @@ behind older words), each frame is labelled with the state it was made for, no s
 settled or upscaled picture is the same picture the person watched develop, never a new one.
 
 ## Run it
+
+When the person asks to set up VorpalFusion and open the UI, complete the setup and launch:
+
+1. Follow the README's Requirements and Run sections. Reuse an existing ComfyUI installation and its models
+   where available; install the missing dependencies and connect the app to that endpoint.
+2. Start the services with the documented loopback defaults, open the actual VorpalFusion URL in the browser,
+   and verify that typing a prompt produces a picture with an available template.
+3. If a compatible GPU endpoint or required model access is missing, explain that prerequisite. The stand-in
+   backend below is a UI preview, not GPU generation.
 
 **Without a GPU** (a stand-in backend that streams drawn frames; the whole page works):
 
