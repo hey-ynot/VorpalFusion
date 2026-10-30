@@ -1,14 +1,12 @@
 # VorpalFusion
 
-**The picture develops while you type.** VorpalFusion runs on your own GPU, beside ComfyUI, where the models stay
-loaded, nobody else is in the queue and an idle second costs nothing, so it shows what your words, settings and
-pictures render into before you ask. Every key you press is a frame; when you stop, the picture settles to full
-quality in a few seconds; then it climbs, one picture, to Final, 2K and 4K.
+**The art takes shape with your ideas in real time, as you type.** VorpalFusion is an app that runs on any local GPU via the ComfyUI SDK. VorpalFusion provides immediate feedback, showing what your words, settings and pictures render into before you have to ask or queue. Every key you press is a frame; when you stop typing, the art settles into full
+quality in seconds and continues to climb to Final, 2K and 4K. Branch easily into alternate concepts of the same baseline until you've sliced your exact idea directly into the ether.
 
 <!-- the demo video: docs/demo.md -->
 **Demo:** see [docs/demo.md](docs/demo.md).
 
-It works on any official ComfyUI template from its slots, with no code per model: FLUX 3 Klein, Z-Image, Krea 2,
+It works on any official ComfyUI endpoint from its slots, with no code per model: FLUX 3 Klein, Z-Image, Krea 2,
 FLUX.2 klein with a reference picture, MiniMax H3 and FastH3 clips, LTX-2.5, and whatever ships next as a template.
 
 ## What you can do
@@ -150,8 +148,7 @@ drift, settle quality, precision swaps); each takes `--api` and `--comfy` and ru
 Element ids, file names, job labels and storage keys keep the app's working name, `gpu-vision`. How the loop works,
 and every measurement behind its choices: [docs/how-it-works.md](docs/how-it-works.md).
 
-Built on Saddle, a private Higgsfield on your own ComfyUI: VorpalFusion is a Saddle app, and runs inside it with
-`--saddle <Saddle server>` (its templates and library); this repository runs it alone.
+VorpalFusion can be run inside of creation harnesses similar to other comfy sdk apps, this repository runs the application standalone.
 
 ## Licence
 
