@@ -22,6 +22,15 @@ settled or upscaled picture is the same picture the person watched develop, neve
 
 ## Run it
 
+When the person asks to set up VorpalFusion and open the UI, complete the setup and launch:
+
+1. Follow the README's Requirements and Run sections. Reuse an existing ComfyUI installation and its models
+   where available; install the missing dependencies and connect the app to that endpoint.
+2. Start the services with the documented loopback defaults, open the actual VorpalFusion URL in the browser,
+   and verify that typing a prompt produces a picture with an available template.
+3. If a compatible GPU endpoint or required model access is missing, explain that prerequisite. The stand-in
+   backend below is a UI preview, not GPU generation.
+
 **Without a GPU** (a stand-in backend that streams drawn frames; the whole page works):
 
 ```bash

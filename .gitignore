@@ -4,3 +4,9 @@ node_modules/
 gv-*/
 *.egg-info/
 dist/
+
+# Local environment secrets; example files can be shared.
+.env
+.env.*
+!.env.example
+!.env.*.example

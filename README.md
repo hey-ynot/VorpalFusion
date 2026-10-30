@@ -13,22 +13,32 @@ A live canvas for ComfyUI: shape an image or video while typing, then carry it i
 [![Open weights only](https://img.shields.io/badge/models-open%20weights%20only-f5a524)](#models)
 [![#OpenSourceHiggsfield](https://img.shields.io/badge/%23-OpenSourceHiggsfield-black)](docs/demo.md)
 
-<img src="docs/media/vorpalfusion.gif" alt="In VorpalFusion: an astronaut riding a translucent jellyfish over the moon is restyled live into a pink wool-felt diorama, which then comes alive as a clip" width="720">
+<img src="docs/media/vorpalfusion.gif" alt="An astronaut riding a jellyfish is restyled into a pink wool-felt diorama, then animated" width="640">
+
+<sub>Sped-up demo · <a href="docs/demo.md">Try this scene</a></sub>
 
 <sub>FLUX 3 Klein · FastH3 · Pika H3 Flex · LTX-2.5 · Z-Image · Krea 2 · SeedVR2 — all running locally through ComfyUI</sub>
 
 </div>
 
-**The art takes shape with your ideas in real time, as you type.** VorpalFusion is an app that runs on any local GPU via the ComfyUI SDK. VorpalFusion provides immediate feedback, showing what your words, settings and pictures render into before you have to ask or queue. Every key you press is a frame; when you stop typing, the art settles into full
-quality in seconds and continues to climb to Final, 2K and 4K. Branch easily into alternate concepts of the same baseline until you've sliced your exact idea directly into the ether.
+**The art takes shape with your ideas as you type.** VorpalFusion is a local image and video app powered by
+ComfyUI. Describe a scene, change the words, or drop in a picture and watch the preview develop. When you stop
+typing, it settles into full quality; keep exploring or take it up to Final, 2K and 4K.
 
-<!-- the demo video: docs/demo.md -->
-**Demo:** see [docs/demo.md](docs/demo.md).
+## Get started
 
-It works on any official ComfyUI endpoint from its slots, with no code per model: FLUX 3 Klein, Z-Image, Krea 2,
-FLUX.2 klein with a reference picture, MiniMax H3, FastH3 and Pika H3 Flex clips, LTX-2.5, and whatever ships next as a template.
+Tell your coding agent:
+
+> Set up VorpalFusion from https://github.com/hey-ynot/VorpalFusion and then open the UI in the browser.
+
+Your agent can follow [AGENTS.md](AGENTS.md) to set up the dependencies, connect to ComfyUI, and open the app.
+Choose a template and start typing. See [Requirements](#requirements) for the GPU and model files, or
+[Run](#run) for the manual setup commands.
 
 ## What you can do
+
+VorpalFusion reads each ComfyUI template's inputs, with no code per model: FLUX 3 Klein, Z-Image, Krea 2,
+FLUX.2 klein with a reference picture, MiniMax H3, FastH3 and Pika H3 Flex clips, and LTX-2.5.
 
 - **Type.** A live picture in about a quarter second per frame on an RTX 5090 (key to first frame 0.22-0.26 s on
   Z-Image, FLUX 3 Klein and Krea 2), streamed step by step as ComfyUI samples it; words go out on word boundaries,
