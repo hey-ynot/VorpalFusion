@@ -15,7 +15,7 @@ Live image and clip generation over any ComfyUI template, on your own GPU.
 
 <img src="docs/media/vorpalfusion.gif" alt="In VorpalFusion: an astronaut riding a translucent jellyfish over the moon is restyled live into a pink wool-felt diorama, which then comes alive as a clip" width="720">
 
-<sub>FLUX 3 Klein · FastH3 · LTX-2.5 · Z-Image · Krea 2 · SeedVR2 — all running locally through ComfyUI</sub>
+<sub>FLUX 3 Klein · FastH3 · Pika H3 Flex · LTX-2.5 · Z-Image · Krea 2 · SeedVR2 — all running locally through ComfyUI</sub>
 
 </div>
 
@@ -26,7 +26,7 @@ quality in seconds and continues to climb to Final, 2K and 4K. Branch easily int
 **Demo:** see [docs/demo.md](docs/demo.md).
 
 It works on any official ComfyUI endpoint from its slots, with no code per model: FLUX 3 Klein, Z-Image, Krea 2,
-FLUX.2 klein with a reference picture, MiniMax H3 and FastH3 clips, LTX-2.5, and whatever ships next as a template.
+FLUX.2 klein with a reference picture, MiniMax H3, FastH3 and Pika H3 Flex clips, LTX-2.5, and whatever ships next as a template.
 
 ## What you can do
 
@@ -78,6 +78,7 @@ templates the demo uses, from their official sources:
 | 2K / 4K rungs (SeedVR2) | `seedvr2_3b_int8_convrot`, `seedvr2_ema_vae_fp16` | [Comfy-Org/SeedVR2](https://huggingface.co/Comfy-Org/SeedVR2) | no (Apache-2.0) |
 | FastH3 clips | `fastvideo_fasth3_8step_v2_pruned_int8_convrot` | [FastVideo/FastVideo-FastH3-Comfy](https://huggingface.co/FastVideo/FastVideo-FastH3-Comfy) | no (MiniMax H3 community licence) |
 | | `qwen3vl_32b_minimax_h3_nvfp4_awq`, `minimax_h3_video_vae_int8_convrot`, `minimax_h3_audio_vae_fp32` | [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3) | no (MiniMax H3 community licence) |
+| Pika H3 Flex clips (text, first/last frame, references; 6 steps, with sound) | `pika_h3_flex_fl2va_v1_bf16`, `pika_h3_flex_ref2va_v1_bf16` (loras) on `minimax_h3_fl2va_pruned_int8_convrot` / `minimax_h3_ref2va_pruned_int8_convrot` (diffusion_models), with the H3 encoder and VAEs above | [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3) ([Pika-Labs/Pika-H3-Flex](https://huggingface.co/Pika-Labs/Pika-H3-Flex)) | no (MiniMax H3 community licence) |
 | LTX-2.5 clips | `ltx-2.5-22b-distilled-transformer-comfy-int8-convrot`, `gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot`, `ltx-2.5-video-vae-bf16`, `ltx-2.5-audio-vae-bf16`, `ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0` | [Lightricks/LTX-2.5](https://huggingface.co/Lightricks/LTX-2.5) | **yes**: accept the LTX-2.x community licence first |
 | | `gemma4_e2b_it_int8_convrot` | [Comfy-Org/gemma-4](https://huggingface.co/Comfy-Org/gemma-4) | no (Apache-2.0) |
 | Smooth (clip frame interpolation) | `film_net_fp16` (frame_interpolation) | [Comfy-Org/Frame-Interpolation](https://huggingface.co/Comfy-Org/Frame-Interpolation) | no |

@@ -81,7 +81,7 @@ from profile import FLOW_LEVELS, FLOW_ROOT, HIRES, LIVE_BUCKETS, MODEL_FILES, Pr
 from vf_templates import TemplateError, import_template, media_slots  # noqa: E402
 
 # The endpoint's official templates offered without Saddle: the families the live profile is measured on.
-FAMILIES = re.compile(r"(image|video)_(flux3_klein|z_image|krea2|flux2_klein|minimax_h3|fastvideo_fasth3|ltx2_5)(?!.*controlnet)")
+FAMILIES = re.compile(r"(image|video)_(flux3_klein|z_image|krea2|flux2_klein|minimax_h3|fastvideo_fasth3|pika_h3_flex|ltx2_5)(?!.*controlnet)")
 RECORDS = Path.home() / ".cache" / "gpu-vision" / "templates"  # records built with comfy-cli, by template file and endpoint
 
 
