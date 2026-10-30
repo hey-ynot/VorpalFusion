@@ -34,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import live  # noqa: E402  (the sidecar under check)
 
+MOUNT = "/vorpalfusion"  # the page is also served under this prefix, as the ComfyUI extension serves it
 GPU = asyncio.Lock()  # live jobs run one at a time, as ComfyUI runs prompts: one that went ahead waits its turn
 LIVE_JOBS: list[dict[str, Any]] = []  # each live job's version and times (submitted, started, ended), for the checks
 
@@ -260,6 +261,8 @@ class FakeLive(live.Live):
 
 
 async def app(scope, receive, send) -> None:
+    if scope.get("path", "").startswith(MOUNT + "/"):  # the page under a path prefix, as ComfyUI mounts it
+        scope = {**scope, "path": scope["path"][len(MOUNT):]}
     path = scope.get("path", "")
     if scope["type"] == "http" and not scope["app_state"].saddle and path == "/library":
         await live.reply(send, 200, json.dumps({"items": [{**item, "thumb": f"library/thumb/{item['id']}"} for item in LIBRARY],

@@ -433,7 +433,8 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (text) => String(text ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-const framed = window.parent !== window;
+// Framed by a host (Saddle frames the module in an opaque-origin sandbox); a same-origin frame (ComfyUI's sidebar) is the page itself.
+const framed = window.parent !== window && (() => { try { return parent.location.origin !== location.origin; } catch { return true; } })();
 const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 // Storage is unavailable in an opaque-origin sandbox: everything then lives for the session only.
 const store = (() => { try { const s = window.localStorage; s.setItem('gv.probe', '1'); s.removeItem('gv.probe'); return s; } catch { return null; } })();
@@ -451,7 +452,12 @@ let aspect = saved.aspect || 1, liveOn = !framed, hostBusy = false, timer = 0;
 let panels = saved.panels || 1, panel = null, panelSet = null;  // split panels: how many, the one picked (it settles), the batch on stage
 let v = Date.now(), sentV = 0, epochV = v, shownV = -1, settledV = -1;  // nothing from before this page is current
 const thumbs = {}, rels = {};  // picture id -> displayable URL; Saddle library rel -> picture id
-$('prompt').value = saved.prompt || ''; $('st').value = saved.strength ?? 0.6; $('stv').textContent = $('st').value;
+// A first visit opens on a starter prompt (selected, so typing replaces it) and the default template, so a picture lands at once.
+const STARTERS = ['A tiny orange astronaut riding a giant translucent jellyfish over a calm sea at dusk',
+  'A lighthouse on a cliff in a storm, thick oil paint', 'A cozy reading nook with a sleeping cat, soft morning light',
+  'A paper-craft city at night, glowing windows, tilt-shift'];
+$('prompt').value = saved.prompt ?? (framed ? '' : STARTERS[Math.floor(Math.random() * STARTERS.length)]); $('prompt').select();
+$('st').value = saved.strength ?? 0.6; $('stv').textContent = $('st').value;
 
 // Words go out on a word boundary: while a word is being typed (the caret at the end, a key in the
 // last 250 ms) the words stop before it (except the first word, so the first frame waits for nothing), so no job is spent on a fragment the encoder cannot read;

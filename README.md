@@ -96,6 +96,31 @@ templates the demo uses, from their official sources:
 Each template file lists the exact download URL of every model it needs; ComfyUI's own template browser offers
 them too. Licences are the models' own; read each before you use its outputs.
 
+## Run inside ComfyUI
+
+This repository is also a ComfyUI custom-node pack. Installed into ComfyUI, VorpalFusion runs inside ComfyUI's own
+server: no second service, no proxy to start, nothing to configure.
+
+```bash
+cd <ComfyUI folder>/custom_nodes
+git clone https://github.com/hey-ynot/VorpalFusion
+<ComfyUI's python> -m pip install -r VorpalFusion/requirements.txt   # comfy-sdk, comfy-api-proxy, comfy-cli, httpx
+```
+
+(or `comfy node install` / ComfyUI Manager, once it is listed), then restart ComfyUI (`--preview-method taesd` for
+sharp step previews). A **VorpalFusion** tab appears in ComfyUI's sidebar with the live page in it, and a
+VorpalFusion button in the top bar (and Extensions → Open VorpalFusion) opens the page in its own browser tab, at
+`<ComfyUI address>/vorpalfusion/`. It works wherever ComfyUI is reached, remotely included.
+
+Inside ComfyUI the endpoint is that ComfyUI, the v2 API runs in-process (comfy-api-proxy under
+`/vorpalfusion/api/v2`, its preview throttle off), Keep saves into ComfyUI's output folder (`output/vorpalfusion/`),
+the templates are ComfyUI's own, and the node pack below is loaded with it. A first visit opens on FLUX 3 Klein (or
+the first template the endpoint can run) with a starter prompt, so a picture lands at once.
+
+```bash
+<ComfyUI's python> checks/comfyui.py <ComfyUI folder>   # on the CPU: the pack loads, its nodes, page and API answer
+```
+
 ## Run
 
 On the GPU machine, ComfyUI and the proxy, with the proxy's preview throttle off (comfy-api-proxy 0.1.6 sends at
@@ -129,8 +154,9 @@ ComfyUI's own official templates in the families VorpalFusion is measured on.
 
 `nodes/` is a small ComfyUI node pack (`GVLatentStore` / `GVLatentRecall`, and a step previewer kept per process).
 Where ComfyUI has it, a Flow frame recalls the frame before it from the ComfyUI process instead of carrying the whole
-chain, so every frame's graph stays the same size. VorpalFusion works without it. To load it, link the folder into
-ComfyUI's `custom_nodes/` and restart ComfyUI:
+chain, so every frame's graph stays the same size. VorpalFusion works without it. Installed inside ComfyUI (above),
+the pack comes with it; for a standalone run, link the folder into ComfyUI's `custom_nodes/` (not both: the nodes
+would register twice) and restart ComfyUI:
 
 ```bash
 ln -s "$PWD/nodes" <ComfyUI folder>/custom_nodes/gpu_vision

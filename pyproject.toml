@@ -28,3 +28,14 @@ dev = ["pytest>=8.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["checks"]
+
+[project.urls]
+Repository = "https://github.com/hey-ynot/VorpalFusion"
+
+# Comfy Registry metadata (registry.comfy.org). Placeholders until the pack is published; inside ComfyUI the pack's
+# dependencies are requirements.txt, and its web folder is named by WEB_DIRECTORY in __init__.py.
+[tool.comfy]
+PublisherId = ""
+DisplayName = "VorpalFusion"
+Icon = ""
+includes = []

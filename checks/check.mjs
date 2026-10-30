@@ -1150,6 +1150,30 @@ if (!process.argv.includes('--live')) {
     assert(settledSnap.sources[0]?.id && 'parent' in settledSnap, 'settled snapshot lacks sources or parent');
     return [...new Set(got)].join(', ');
   });
+
+  await check('under a path prefix, as ComfyUI serves it: a first visit lands a picture, every request stays under the prefix, a same-origin frame is the page itself', async () => {
+    const { context: c, page } = await open({}, 'vorpalfusion/');
+    const origin = new globalThis.URL(URL).origin, asked = [];
+    c.on('request', (r) => { const u = new globalThis.URL(r.url()); if (u.origin === origin) asked.push(u.pathname); });
+    await page.reload();
+    await ready(page);
+    const starter = await page.inputValue('#prompt');
+    assert(starter.length > 10, `no starter prompt on a first visit: "${starter}"`);
+    await page.waitForFunction(() => window.gvLog.length, null, { timeout: 15000 });  // the starter renders with nothing typed
+    await words(page, 'a red tram under a bridge');
+    await settled(page);
+    const outside = asked.filter((path) => !path.startsWith('/vorpalfusion/'));
+    assert(asked.length > 3 && !outside.length, `requests outside the prefix: ${outside.join(', ')}`);
+    await page.goto(URL + 'fake/last');  // a same-origin page holding the page in a frame, as ComfyUI's sidebar tab does
+    await page.evaluate(() => { document.body.innerHTML = '<iframe id="side" src="/vorpalfusion/" style="width:420px;height:820px;border:0"></iframe>'; });
+    const frame = page.frameLocator('#side');
+    await frame.locator('#template option').first().waitFor({ state: 'attached', timeout: 15000 });
+    assert(await frame.locator('#template').isVisible(), 'a same-origin frame took the page for a Saddle module (chooser hidden)');
+    assert(!/Live is off/.test(await frame.locator('#status').textContent()), 'a same-origin frame waits for a host');
+    await shot(page, 'prefix-sidebar');
+    await c.close();
+    return `${asked.length} requests under /vorpalfusion/; starter "${starter.slice(0, 40)}…"`;
+  });
 } else {
   // Words age: for each live picture painted while typing, how long ago the last key its words include was
   // pressed (debounce included). Drift: the mean difference (0-255) at 16x16 between the last live picture

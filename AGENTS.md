@@ -55,7 +55,13 @@ open http://127.0.0.1:8766                    # or point any browser at it
 uv run python live.py --api <comfy-api-proxy URL> --comfy <ComfyUI URL>   # the packaged repo also has `uv run vorpalfusion`
 ```
 
-With ComfyUI and the proxy on their own default ports on the same machine, both flags can be left out. Open
+**Inside ComfyUI** (the simplest setup): this folder is also a ComfyUI custom-node pack. Clone it into ComfyUI's
+`custom_nodes/`, install `requirements.txt` into ComfyUI's Python, restart ComfyUI. The page is then at
+`<ComfyUI>/vorpalfusion/` and in a VorpalFusion sidebar tab; no proxy, no flags (`__init__.py` runs the sidecar and
+comfy-api-proxy in ComfyUI's own process). `<ComfyUI's python> checks/comfyui.py <ComfyUI folder>` checks it on the
+CPU.
+
+**On its own**, with ComfyUI and the proxy on their own default ports on the same machine, both flags can be left out. Open
 <http://127.0.0.1:8765> (`--port`), choose a template and type. `--keep <folder>` sets where Keep saves, and
 `--trace jobs.csv` writes a row per job event. With `--saddle <Saddle server>` it reads that server's imported
 templates and library instead of building records itself.
@@ -64,6 +70,7 @@ templates and library instead of building records itself.
 
 ```bash
 uv run --with pytest pytest -q checks/test_templates.py      # every fixture template reads into a live profile
+uv run --with pytest --with aiohttp pytest -q checks/test_extension.py   # the ComfyUI extension's bridge
 uv run python checks/fake.py --port 8766 &                   # then, in headless Chrome (Node ≥ 20, ffmpeg for clips):
 GV_URL=http://127.0.0.1:8766/ PLAYWRIGHT_DIR=<a node_modules with playwright> node checks/check.mjs
 ```
@@ -85,6 +92,7 @@ for what is fast, what was tried and what lost.
 | `profile.py` | Reads any template into a live profile. It finds the sampler, empty latent, decode, text encoder, reference resizers, layout nodes and enhancer switches **by node class and typed slot**, then builds every graph the app runs: live (a quarter megapixel, a quarter of the steps with a floor, enhancers off, a 2 s clip), settle (decode, Lanczos, encode, refine), Final, hi-res, split panels, pin, step lock, Flow and variations. A new model family that ships as an official ComfyUI template using standard sampler and latent classes is read with no code. |
 | `vf_templates.py` | Builds a template record (API graph, typed slots with their targets and ranges, media roles) from ComfyUI's own template file with comfy-cli, cached per template file and the endpoint's `object_info`. Vendored from Saddle. |
 | `live.html` | The whole page in one file: the stage (a status line, the tools rail, the picture with its ladder in a caption row under it), layout boxes and pin overlay, split panels, the clip timeline, the words composer with its pictures and size control, the snapshot filmstrip, the Settings and Library sheets, and the postMessage bridge used when Saddle frames it. |
+| `__init__.py`, `web/`, `requirements.txt` | The ComfyUI extension. ComfyUI imports `__init__.py` as a custom-node pack: it registers `nodes/`, mounts comfy-api-proxy's v2 app and an aiohttp-to-ASGI bridge to `live.app` under `/vorpalfusion/` on ComfyUI's own server, and starts the loop on ComfyUI's event loop with that ComfyUI as its endpoint and `output/vorpalfusion/` as Keep's folder. `web/vorpalfusion.js` adds the sidebar tab, the top-bar button and a menu command. `live.py` stays unaware of where it runs: the page uses relative URLs only. |
 | `gpu-vision.app.json` | The manifest. Everything per template or per model lives here as data: the hi-res path per template, the edit template per family, lighter live files, tiny decoders, the ladder's tools. |
 | `checks/` | `fake.py` (the sidecar over fake jobs), `templates.json` (fixture records), `check.mjs` (the page checks), `test_templates.py`, and the GPU measurement scripts. |
 

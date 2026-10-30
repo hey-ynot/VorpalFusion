@@ -30,6 +30,8 @@ TEMPLATES = ["image_flux3_klein_distilled_t2i", "image_z_image_turbo"]
 
 async def run(live, state: dict, settle: bool, upscale: str) -> tuple[bytes, float]:
     """One job through the sidecar's owned stream: (the output picture, seconds to downloaded)."""
+    from comfy_sdk import Preview
+
     started = time.perf_counter()
     graph, _takes = live.profile.build(state, settle, upscale)
     job = await live.client.submit(live.client.workflows.from_json(graph))
@@ -37,7 +39,7 @@ async def run(live, state: dict, settle: bool, upscale: str) -> tuple[bytes, flo
     last = None
     async with live._owned(job) as events:
         async for event in events:
-            if getattr(event, "data", None) and type(event).__name__ == "Preview":
+            if isinstance(event, Preview) and event.data:
                 last = event.data
     await job.refresh()
     if job.status != "succeeded":

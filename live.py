@@ -945,7 +945,7 @@ class Live:
                 if item is None:
                     break
                 if isinstance(item, Exception):
-                    if "stream" not in str(item).lower():
+                    if getattr(item, "code", None) != "too_many_streams":  # the SDK's typed error for a refused stream
                         raise item
                     while job.status not in TERMINAL:  # a refused stream: poll instead
                         await asyncio.sleep(0.05)

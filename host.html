@@ -27,7 +27,7 @@
   <pre id="log"></pre>
 </aside>
 <!-- An opaque-origin sandbox, the way Saddle frames an interface module. -->
-<iframe id="module" title="VorpalFusion" sandbox="allow-scripts" src="/"></iframe>
+<iframe id="module" title="VorpalFusion" sandbox="allow-scripts" src="./"></iframe>
 <script>
 const $ = (id) => document.getElementById(id);
 const frame = $('module');
@@ -40,7 +40,7 @@ addEventListener('message', (e) => {
   const brief = type === 'settled' ? `seed ${rest.snapshot?.seed}, parent ${rest.snapshot?.parent}` : type === 'status' ? rest.text : rest.state?.prompt;
   $('log').textContent = `${type}: ${brief}\n` + $('log').textContent.slice(0, 4000);
 });
-fetch('/templates').then((r) => r.json()).then((rows) => {
+fetch('templates').then((r) => r.json()).then((rows) => {
   $('template').innerHTML = rows.filter((t) => !t.checking).map((t) => `<option value="${t.name}">${t.group} · ${t.title}${t.untuned ? ' · untuned' : ''}</option>`).join('');
 });
 let picture = null;

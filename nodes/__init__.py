@@ -1,7 +1,8 @@
 """VorpalFusion's ComfyUI node pack: what a frame loop needs from the executor that core ComfyUI does not keep.
 
-Install by linking this folder into ComfyUI's `custom_nodes/` (as `gpu_vision`) and restarting ComfyUI. Nothing here
-names a model: it serves any template.
+The ComfyUI extension (the folder above, in `custom_nodes/`) loads it. For a standalone sidecar, link this folder
+into ComfyUI's `custom_nodes/` (as `gpu_vision`) instead, not both, and restart ComfyUI. Nothing here names a
+model: it serves any template.
 
 - `GVLatentStore` / `GVLatentRecall`: a session's latents kept in the ComfyUI process between prompts, by
   (session, frame). A Flow frame recalls the frame before it (and its anchor) and stores its own, so its graph is the

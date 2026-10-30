@@ -1,0 +1,5 @@
+# What VorpalFusion needs inside ComfyUI's own Python (ComfyUI Manager and `comfy node install` read this file).
+comfy-sdk~=0.5.0
+comfy-api-proxy==0.1.6
+comfy-cli
+httpx>=0.27
