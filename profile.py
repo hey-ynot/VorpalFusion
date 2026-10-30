@@ -9,6 +9,9 @@ instead of recomposing. Elsewhere the settle renders the template as its authors
 Pictures go in by slot: each of the template's image slots takes one (the first is the source,
 the rest references, labelled by the role Saddle's summary gives them). A template with no
 image slot takes a source by swapping the empty latent its sampler starts from.
+
+A template outside the tuned families (live.py's TUNED) gets the generic profile: its own
+schedule at the live-steps rule below, the smallest live size, no speed dial.
 """
 
 from __future__ import annotations
@@ -107,6 +110,26 @@ class Profile:
         self.finetunes: list[dict[str, Any]] = []  # the Model choices the endpoint has for this template's files (the sidecar fills it)
         self.drafts: dict[str, str] = {}  # a video VAE file -> the tiny decoder a draft clip decodes with (the sidecar fills it)
         self.sized = False  # the endpoint has GetLatentSize: a live graph's output is the latent's size, not the latent as text
+        self.tuned = True  # a measured family (the sidecar sets it): else the generic profile, at the smallest live size
+
+    def start(self) -> str | None:
+        """What the template's sampler starts from: `source` when a picture slot feeds its latent, `empty` when the
+        latent is made from nothing; None when no sampler takes a latent, or one takes a saved latent."""
+        pictures = {str(node) for slot in self.slots if slot["address"] in {m["address"] for m in self.media}
+                    for node, _key in slot["targets"]}
+        for node in self.wf.values():
+            link = node["inputs"].get("latent_image")
+            if "Sampler" not in node["class_type"] or not isinstance(link, list):
+                continue
+            behind, todo = set(), [str(link[0])]
+            while todo:
+                node_id = todo.pop()
+                if node_id not in behind and node_id in self.wf:
+                    behind.add(node_id)
+                    todo += [str(v[0]) for v in self.wf[node_id]["inputs"].values() if isinstance(v, list) and len(v) == 2]
+            if not any("LoadLatent" in self.wf[node_id]["class_type"] for node_id in behind):
+                return "source" if behind & pictures else "empty"
+        return None
 
     def enhancers(self) -> list[str]:
         """The slots that switch a prompt enhancer (an upsampler that rewrites the words) on or off."""
@@ -262,7 +285,7 @@ class Profile:
         clip = self.clip_chips()
         if clip is not None and "duration" not in clip and (self.duration or {}).get("address"):  # a length only a guide's math names
             clip["duration"] = {**self.duration, "choices": list(DURATIONS)}
-        return {"name": self.name, "title": self.title, "kind": self.kind, "prompt": self.prompt, "seed": self.seed,
+        return {"name": self.name, "title": self.title, "kind": self.kind, "tuned": self.tuned, "prompt": self.prompt, "seed": self.seed,
                 "steps": self.size.get("steps", (None,))[0], "live_steps": self.live_steps,
                 "megapixels": self.size.get("megapixels", (None,))[0], "media": self.media, "edits": self.edits,
                 "settle": "refines the live frame" if self.refines() else "renders the template", "knobs": self.knobs(),
@@ -434,9 +457,12 @@ class Profile:
 
     def live_size(self, state: dict[str, Any]) -> float:
         """The live job's megapixels: the bucket nearest the dial's `live_mp` (a quarter megapixel by default), one
-        bucket smaller while the creator types fast (`fast`). A clip keeps its own live size."""
+        bucket smaller while the creator types fast (`fast`). A clip keeps its own live size; an untuned template takes
+        the smallest."""
         if self.kind != "image":
             return LIVE_MEGAPIXELS[self.kind]
+        if not self.tuned:
+            return LIVE_BUCKETS[0]
         mp = min(LIVE_BUCKETS, key=lambda b: abs(b - (state.get("live_mp") or LIVE_MEGAPIXELS["image"])))
         return LIVE_BUCKETS[max(0, LIVE_BUCKETS.index(mp) - 1)] if state.get("fast") else mp
 

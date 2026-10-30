@@ -1006,6 +1006,39 @@ if (!process.argv.includes('--live')) {
     return `475.image ← library ${by['475.image'].parent}; 470.image ← a snapshot`;
   });
 
+  // Detection: the fixtures as an endpoint's own templates (no Saddle rows), in a page of their own.
+  await fetch(`${URL}fake/standalone`, { method: 'POST', body: JSON.stringify({ on: true }) });
+  const { context: dc, page: q } = await open();
+  const option = (n) => q.$eval(`#template option[value="${n}"]`, (o) => ({ text: o.textContent, disabled: o.disabled })).catch(() => null);
+
+  await check('detection: a template outside the tuned list shows checking…, then is offered labelled untuned, and runs live on the generic profile', async () => {
+    await ready(q);
+    const first = await option('image_fake_untuned_t2i'), tuned = await option('image_z_image_turbo');
+    assert(first?.disabled && /checking…$/.test(first.text), `before its check: ${JSON.stringify(first)}`);
+    assert(tuned && !tuned.disabled && !/untuned|checking/.test(tuned.text), `a tuned template: ${JSON.stringify(tuned)}`);
+    await q.waitForFunction(() => templates.length && !templates.some((t) => t.checking), null, { timeout: 15000 });
+    const after = await option('image_fake_untuned_t2i');
+    assert(after && !after.disabled && /· untuned$/.test(after.text), `after its check: ${JSON.stringify(after)}`);
+    await choose(q, 'image_fake_untuned_t2i');
+    assert(await q.evaluate(() => profile.tuned === false), 'the profile is not the generic one');
+    await words(q, 'a blue boat on a still lake');
+    await waitStatus(q, /^Live/);
+    await settled(q);
+    const latent = Object.values((await last()).graph).find((n) => n.class_type === 'EmptySD3LatentImage').inputs;
+    const mp = latent.width * latent.height / 1e6;
+    assert(mp < 0.13, `live at ${mp} MP, not the smallest bucket`);
+    return `${after.text}; live at ${mp.toFixed(3)} MP`;
+  });
+
+  await check('detection: a template without a prompt or a seed slot, or a partner one, is not offered', async () => {
+    await q.waitForFunction(() => templates.length && !templates.some((t) => t.checking), null, { timeout: 15000 });
+    for (const n of ['image_fake_noseed_t2i', 'image_fake_noprompt_t2i', 'api_fake_partner_t2i']) assert(!(await option(n)), `${n} is offered`);
+    assert(!q.errors.length, q.errors.join('; '));
+    return `${await q.$$eval('#template option', (o) => o.filter((x) => / · untuned$/.test(x.textContent)).length)} untuned offered`;
+  });
+  await fetch(`${URL}fake/standalone`, { method: 'POST', body: JSON.stringify({ on: false }) });
+  await dc.close();
+
   await check('no page errors', async () => { assert(!p.errors.length, p.errors.join('; ')); });
   await context.close();
 

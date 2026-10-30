@@ -1357,19 +1357,28 @@ addEventListener('keyup', (e) => { if (e.key === 'b' && !hovered) hideCompare();
 addEventListener('blur', () => { if (!hovered) hideCompare(); });
 
 // Templates, pictures, settings.
+// A template outside the tuned families says "untuned"; one the sidecar still checks is listed, not choosable, until known.
 function fillChooser() {
   const groups = [...new Set(templates.map((t) => t.group))];
+  const label = (t) => t.checking ? `${t.title} · checking…` : t.untuned ? `${t.title} · untuned` : t.title;
   $('template').innerHTML = groups.map((g) => `<optgroup label="${esc(g)}">`
-    + templates.filter((t) => t.group === g).map((t) => `<option value="${esc(t.name)}">${esc(t.title)}</option>`).join('') + '</optgroup>').join('');
+    + templates.filter((t) => t.group === g).map((t) => `<option value="${esc(t.name)}"${t.checking ? ' disabled' : ''}>${esc(label(t))}</option>`).join('') + '</optgroup>').join('');
+  if (template) $('template').value = template;
+}
+async function fetchTemplates() {
+  const r = await call('templates'); if (!r?.ok) return false;
+  templates = await r.json(); fillChooser();
+  if (templates.some((t) => t.checking)) setTimeout(fetchTemplates, 2000);
+  return true;
 }
 async function resync() {
   if (!templates.length) {
-    const r = await call('templates'); if (!r?.ok) return;
-    templates = await r.json(); fillChooser();
+    if (!await fetchTemplates()) return;
     call('library').then((lib) => { $('libbtn').hidden = !lib?.ok; });  // no Saddle, no library
   }
-  const name = templates.some((t) => t.name === template) ? template
-    : (templates.find((t) => t.name === 'image_flux3_klein_distilled_t2i') ?? templates[0])?.name;
+  const choosable = templates.filter((t) => !t.checking);
+  const name = choosable.some((t) => t.name === template) ? template
+    : (choosable.find((t) => t.name === 'image_flux3_klein_distilled_t2i') ?? choosable[0])?.name;
   if (name) await useTemplate(name);
 }
 async function useTemplate(name, opts = {}) {

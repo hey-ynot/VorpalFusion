@@ -41,7 +41,7 @@ addEventListener('message', (e) => {
   $('log').textContent = `${type}: ${brief}\n` + $('log').textContent.slice(0, 4000);
 });
 fetch('/templates').then((r) => r.json()).then((rows) => {
-  $('template').innerHTML = rows.map((t) => `<option value="${t.name}">${t.group} · ${t.title}</option>`).join('');
+  $('template').innerHTML = rows.filter((t) => !t.checking).map((t) => `<option value="${t.name}">${t.group} · ${t.title}${t.untuned ? ' · untuned' : ''}</option>`).join('');
 });
 let picture = null;
 $('pic').addEventListener('change', async () => {

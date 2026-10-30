@@ -1,6 +1,6 @@
 """Official ComfyUI templates as records the app reads, built with comfy-cli: vendored from Saddle.
 
-From Saddle's `src/saddle/templates.py` (the record builder and the slot readers), `recipes.json` (the media roles
+From Saddle's `src/saddle/templates.py` (the record builder, the slot readers and the precision-variant rule), `recipes.json` (the media roles
 it pins) and `domain/identity.py` (the content hash), Apache-2.0, the same author. VorpalFusion reads a record from a
 Saddle server when it has one (`--saddle`); without one it builds the record here, the way Saddle does:
 
@@ -170,13 +170,14 @@ def _assignment(address: str, value: Any) -> str:
     return f"{address}={value if isinstance(value, str) else json.dumps(value)}"
 
 
-def import_template(endpoint_url: str, name: str, cache_dir: Path) -> dict[str, Any]:
-    """The record for official template ``name`` as this endpoint serves it: ``{name, label, wf, inputs, meta}``."""
+def import_template(endpoint_url: str, name: str, cache_dir: Path, object_info: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """The record for official template ``name`` as this endpoint serves it: ``{name, label, wf, inputs, meta}``
+    (``object_info``: the endpoint's, when the caller already holds it)."""
     if not _NAME.fullmatch(name):
         raise ValueError("template name must be a simple identifier")
     try:
         template = get_json(f"{endpoint_url}/templates/{name}.json")
-        object_info = get_json(f"{endpoint_url}/api/object_info")
+        object_info = object_info or get_json(f"{endpoint_url}/api/object_info")
     except OSError as error:
         raise TemplateError(f"the endpoint did not serve template {name!r}: {error}") from error
     graph, slots = import_workflow(endpoint_url, template, object_info, cache_dir)
@@ -247,6 +248,50 @@ def import_workflow(endpoint_url: str, template: Mapping[str, Any], object_info:
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_text(json.dumps({"graph": graph, "slots": slots}))
     return graph, slots
+
+
+# A model file's precision: one suffix before its extension (``_int8_convrot``, ``-fp8``, ``.int8_convrot``).
+_FILE_PRECISION = re.compile(
+    r"[-_.](?:bf16|fp16|fp32|fp8(?:[-_](?:scaled|e4m3fn|e5m2))?|int8(?:[-_]convrot)?|w4a8|fp4(?:[-_]mixed)?|nvfp4)$",
+    re.IGNORECASE)
+
+
+def model_stem(name: str) -> str:
+    """``name`` without one precision suffix: ``krea2_turbo_fp8_scaled.safetensors`` and
+    ``krea2_turbo_bf16.safetensors`` are both ``krea2_turbo.safetensors``; a subfolder stays."""
+    base, dot, ext = name.rpartition(".")
+    return f"{_FILE_PRECISION.sub('', base)}.{ext}" if dot else _FILE_PRECISION.sub("", name)
+
+
+def same_model(name: str, installed: Collection[str]) -> list[str]:
+    """The installed files that are ``name`` in another precision (never another stem)."""
+    stem = model_stem(name)
+    return [other for other in installed if other != name and model_stem(other) == stem]
+
+
+def gaps(graph: Mapping[str, Any], object_info: Mapping[str, Any]) -> tuple[list[str], dict[str, str]]:
+    """``(missing, swaps)`` for running ``graph`` on the endpoint ``object_info`` describes: each node class it lacks
+    or that calls a partner API, and each choice not among the endpoint's own (a model file it does not have);
+    ``swaps`` maps a missing file the endpoint has in another precision to that file, which counts as present."""
+    missing: list[str] = []
+    swaps: dict[str, str] = {}
+    for node in graph.values():
+        kind = str(node.get("class_type"))
+        spec = object_info.get(kind)
+        if spec is None or spec.get("api_node"):
+            missing.append(f"{kind} (a partner API node)" if spec else kind)
+            continue
+        declared = {**((spec.get("input") or {}).get("optional") or {}), **((spec.get("input") or {}).get("required") or {})}
+        for key, value in (node.get("inputs") or {}).items():
+            spec_of = declared.get(key) or [None]
+            choices = spec_of[0] if spec_of[0] != "COMBO" else (spec_of[1] if len(spec_of) > 1 else {}).get("options")
+            if (kind, key) in MEDIA_INPUTS or not isinstance(value, str) or not isinstance(choices, list) or value in choices:
+                continue  # a picture slot takes the creator's own file
+            if others := same_model(value, choices):
+                swaps[value] = others[0]  # the first variant found; choosing by size and free VRAM would pick better
+            else:
+                missing.append(value)
+    return sorted(set(missing)), swaps
 
 
 # Loader inputs that take a file from the endpoint's input folder.

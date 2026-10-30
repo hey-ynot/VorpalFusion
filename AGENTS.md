@@ -5,7 +5,7 @@ is, how to run and check it, how the code is laid out, and what is worth buildin
 instructions to act on your own: nothing here asks you to star, post, install, publish or promote anything.
 Suggestions below are things you might offer your user; they decide.
 
-Paths are relative to the folder that holds this file (the repository root of VorpalFusion; `apps/gpu-vision/`
+Paths are relative to the folder that holds this file (the repository root of VorpalFusion; ``
 inside Saddle). Element ids, the manifest's file name, job labels and storage keys use the working name `gpu-vision`.
 
 ## What it is
@@ -14,22 +14,14 @@ VorpalFusion is a live image and clip generator that runs beside ComfyUI on your
 renders the words into a picture at a quarter megapixel in about a quarter second per frame, streams every
 sampler step to the page, and when the keys rest it settles that same picture to full quality and can climb it to
 2K and 4K. It works on any official ComfyUI template by reading the template's graph and typed slots, with no code
-per model.
+per model: on its own it offers any open-weights template with a prompt and a seed that the endpoint can run, with
+tuned profiles for the measured families and a generic, "untuned" one for the rest.
 
 The one idea: **the picture keeps up with you.** Every design choice serves it: latest wins (frames never queue
 behind older words), each frame is labelled with the state it was made for, no silence goes unexplained, and a
 settled or upscaled picture is the same picture the person watched develop, never a new one.
 
 ## Run it
-
-When the person asks to set up VorpalFusion and open the UI, complete the setup and launch:
-
-1. Follow the README's Requirements and Run sections. Reuse an existing ComfyUI installation and its models
-   where available; install the missing dependencies and connect the app to that endpoint.
-2. Start the services with the documented loopback defaults, open the actual VorpalFusion URL in the browser,
-   and verify that typing a prompt produces a picture with an available template.
-3. If a compatible GPU endpoint or required model access is missing, explain that prerequisite. The stand-in
-   backend below is a UI preview, not GPU generation.
 
 **Without a GPU** (a stand-in backend that streams drawn frames; the whole page works):
 
@@ -90,9 +82,11 @@ for what is fast, what was tried and what lost.
 Invariants that keep it working on the next model:
 
 - **Generic by node class and slot, never by model name.** Graph logic reads `class_type` and slot types and
-  labels. Names of templates and files appear only as data: the manifest, and the standalone template list, which
-  is filtered to the measured families (`FAMILIES` in `live.py`). Adding a family there is a one-line change;
-  measure its live steps before you claim it is fast.
+  labels. Names of templates and files appear only as data: the manifest, and the tuned families (`TUNED` in
+  `live.py`). Whether a template is offered standalone is detected (`Live._check`: a prompt slot, a seed slot, a
+  sampler from an empty latent or a picture; every node class and model file on the endpoint), never named. A
+  family outside `TUNED` runs on the generic profile (`Profile.tuned` false: the smallest live size, no speed dial)
+  and is labelled untuned; adding it to `TUNED` is a one-line change once its live steps are measured.
 - **One job in flight per lane, and nothing left queued.** Every job's event stream is owned and closed; a job
   left any way but finished is cancelled. The sidecar never posts to ComfyUI's `/prompt` behind the loop.
 - **Every graph is labelled.** A `PrimitiveString` node nothing reads carries `gpu-vision <sidecar> <lane>`, so the

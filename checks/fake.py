@@ -6,7 +6,8 @@ live job for 3 s, silent (for stale-frame and watchdog checks); `#long` makes ea
 from cache: it ends at once with no preview. The enhancer of an Enrich settle
 drops 'a' and 'the' and adds a phrase. The templates are `templates.json` beside this file (records as Saddle serves
 them, model lists cut to the files each template uses), or a Saddle server's with `--saddle`; the Library drawer
-shows fixture pictures.
+shows fixture pictures. `POST /fake/standalone {"on": true}` lists them as an endpoint's own templates instead, checked
+by the sidecar's detection, with three more only detection tells apart (`DETECTED`).
 
     uv run python checks/fake.py --port 8766
 
@@ -162,6 +163,14 @@ class Job:
 
 
 FIXTURES = json.loads((Path(__file__).parent / "templates.json").read_text())
+# Records only detection tells apart: Z-Image under a name outside the tuned families, and it without a seed or a prompt slot.
+_ZIMAGE = FIXTURES["records"]["image_z_image_turbo"]
+DETECTED = {"image_fake_untuned_t2i": "Fake Untuned", "image_fake_noseed_t2i": "Fake No Seed", "image_fake_noprompt_t2i": "Fake No Prompt"}
+for _name, _drop in (("image_fake_untuned_t2i", None), ("image_fake_noseed_t2i", "seed"), ("image_fake_noprompt_t2i", "text")):
+    _record = json.loads(json.dumps(_ZIMAGE))
+    _record.update(name=_name, label=DETECTED[_name])
+    _record["inputs"]["slots"] = [slot for slot in _record["inputs"]["slots"] if slot.get("name") != _drop]
+    FIXTURES["records"][_name] = _record
 LIBRARY = [{"id": f"art_{n}", "rel": f"/api/artifacts/art_{n}/content", "title": words, "kind": "image"}
            for n, words in enumerate(("a lighthouse at dusk", "a red jacket on a chair", "a green door in the rain"), 1)]
 
@@ -175,11 +184,25 @@ class FakeLive(live.Live):
     FINETUNES = [{"name": "tune-krea.safetensors", "folder": "diffusion_models", "replaces": "krea2_turbo_fp8_scaled.safetensors", "label": "Tune"},
                  {"name": "absent.safetensors", "folder": "diffusion_models", "replaces": "krea2_turbo_fp8_scaled.safetensors", "label": "Absent"}]
 
-    async def _record(self, http: Any, name: str) -> dict[str, Any]:
-        return await super()._record(http, name) if self.saddle else json.loads(json.dumps(FIXTURES["records"][name]))
+    standalone = False  # POST /fake/standalone {"on": true}: the fixtures as the endpoint's own templates, detected
+
+    async def _record(self, http: Any, name: str, info: dict[str, Any] | None = None) -> dict[str, Any]:
+        return await super()._record(http, name, info) if self.saddle else json.loads(json.dumps(FIXTURES["records"][name]))
 
     async def catalog(self) -> list[dict[str, Any]]:
-        return await super().catalog() if self.saddle else FIXTURES["templates"]
+        return await super().catalog() if self.saddle or FakeLive.standalone else FIXTURES["templates"]
+
+    async def _index(self, http: Any) -> list[dict[str, Any]]:  # an endpoint's index: the fixtures, the detected three, a partner one
+        rows = [{"name": row["name"], "title": row["label"], "mediaType": row["kind"]} for row in FIXTURES["templates"]]
+        rows += [{"name": name, "title": label, "mediaType": "image"} for name, label in DETECTED.items()]
+        return [{"templates": rows + [{"name": "api_fake_partner_t2i", "title": "Partner", "mediaType": "image", "openSource": False}]}]
+
+    async def _object_info(self, http: Any) -> dict[str, Any]:  # every node class the fixtures use; no choice lists
+        return {node["class_type"]: {} for record in FIXTURES["records"].values() for node in record["wf"].values()}
+
+    async def _check(self, http: Any, name: str, info: dict[str, Any]) -> dict[str, Any]:
+        await asyncio.sleep(0.3)  # comfy-cli takes seconds; the page shows "checking…" meanwhile
+        return await super()._check(http, name, info)
 
     async def library(self, rel: str) -> dict[str, Any]:  # a fixture library picture, kept like a dropped one
         item = next((item for item in LIBRARY if item["rel"] == rel), None)
@@ -246,6 +269,9 @@ async def app(scope, receive, send) -> None:
         await live.reply(send, 200, json.dumps(scope["app_state"].last).encode())
     elif scope["type"] == "http" and scope["path"] == "/fake/pack":
         FakeLive.pack_on = bool(json.loads(await live.read_body(receive) or b"{}").get("on"))
+        await live.reply(send, 200, b"{}")
+    elif scope["type"] == "http" and scope["path"] == "/fake/standalone":
+        FakeLive.standalone = bool(json.loads(await live.read_body(receive) or b"{}").get("on"))
         await live.reply(send, 200, b"{}")
     elif scope["type"] == "http" and scope["path"] == "/fake/live":
         await live.reply(send, 200, json.dumps(LIVE_JOBS).encode())

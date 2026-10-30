@@ -17,7 +17,8 @@ Run (needs the endpoint's v2 API with previews unthrottled; see README.md):
     uv run python live.py --api <v2 API> [--comfy <ComfyUI>] [--saddle <a Saddle server>]
 
 then open http://127.0.0.1:8765 and choose a template. Templates come from a Saddle server with `--saddle`, else from
-the endpoint's own official templates, built into records here with comfy-cli (vf_templates.py).
+the endpoint's own official templates, built into records here with comfy-cli (vf_templates.py): any open-weights one
+with a prompt, a seed and a sampler that the endpoint has the nodes and model files for.
 """
 
 from __future__ import annotations
@@ -78,10 +79,12 @@ LADDER = MANIFEST["ladder"]  # which hi-res path each template climbs by, and th
 LIBRARY_REL = re.compile(r"/api/artifacts/[A-Za-z0-9_.-]+/content")  # a Saddle library picture, the only URL the sidecar fetches for one
 
 from profile import FLOW_LEVELS, FLOW_ROOT, HIRES, LIVE_BUCKETS, MODEL_FILES, Profile, title  # noqa: E402  (beside this file)
-from vf_templates import TemplateError, import_template, media_slots  # noqa: E402
+from vf_templates import TemplateError, gaps, import_template, media_slots  # noqa: E402
 
-# The endpoint's official templates offered without Saddle: the families the live profile is measured on.
-FAMILIES = re.compile(r"(image|video)_(flux3_klein|z_image|krea2|flux2_klein|minimax_h3|fastvideo_fasth3|pika_h3_flex|ltx2_5)(?!.*controlnet)")
+# The families the live profile is measured on: offered at once without Saddle. Any other template is offered once it
+# is checked (`Live._check`) and runs on the generic profile, labelled untuned; a family joins here once measured.
+TUNED = re.compile(r"(image|video)_(flux3_klein|z_image|krea2|flux2_klein|minimax_h3|fastvideo_fasth3|pika_h3_flex|ltx2_5)(?!.*controlnet)")
+CHECKS_AT_ONCE = 2  # templates checked in parallel (comfy-cli builds a record in seconds, on the CPU)
 RECORDS = Path.home() / ".cache" / "gpu-vision" / "templates"  # records built with comfy-cli, by template file and endpoint
 
 
@@ -219,6 +222,8 @@ class Live:
         self.profiles: dict[str, Profile] = {}  # every template read, so a snapshot of another one can climb
         self.records: dict[str, dict[str, Any]] = {}  # without Saddle: the records built here, by template
         self.titles: dict[str, str] = {}  # without Saddle: the endpoint's own template titles
+        self.checked: dict[str, dict[str, Any]] = {}  # without Saddle: each untuned template's verdict ({offer, why, kind, job, swaps})
+        self.checking: asyncio.Task | None = None  # the background check of the templates not yet checked
         self.views: OrderedDict[str, tuple[bytes, str]] = OrderedDict()  # a rung's picture as shown (JPEG) or its clip, by job
         # The ladder: rungs asked for, run one at a time below live and settle. Live keeps working: any change
         # stops the rung's job, and it runs again from the top once the loop is idle.
@@ -254,6 +259,8 @@ class Live:
         if fresh or name not in self.profiles:
             async with httpx.AsyncClient(timeout=30) as http:
                 profile = Profile(await self._record(http, name))
+                profile.tuned = bool(TUNED.match(name))
+                profile.swaps.update(self.checked.get(name, {}).get("swaps", {}))  # files the endpoint has in another precision
                 for asset in LIVE_MODELS:  # a lighter file the manifest names, where the endpoint has it
                     if asset["replaces"] in json.dumps(profile.wf) and asset["name"] in await self._models(http, asset["folder"]):
                         profile.swaps[asset["replaces"]] = asset["name"]
@@ -268,27 +275,73 @@ class Live:
             self.profiles[name] = profile
         return self.profiles[name]
 
-    async def _record(self, http: Any, name: str) -> dict[str, Any]:
-        """A template's record: Saddle's, or built from the endpoint's own template with comfy-cli (once a run)."""
+    async def _record(self, http: Any, name: str, info: dict[str, Any] | None = None) -> dict[str, Any]:
+        """A template's record: Saddle's, or built from the endpoint's own template with comfy-cli (once a run; `info`:
+        the endpoint's object_info, when the caller holds it)."""
         if self.saddle:
             return (await http.get(f"{self.saddle}/api/templates/{quote(name)}")).json()
         if name not in self.records:
-            self.records[name] = await asyncio.to_thread(import_template, self.comfy, name, RECORDS)
+            self.records[name] = await asyncio.to_thread(import_template, self.comfy, name, RECORDS, info)
         return {**self.records[name], "label": self.titles.get(name, name)}
 
+    async def _index(self, http: Any) -> list[dict[str, Any]]:
+        return (await http.get(f"{self.comfy}/templates/index.json")).json()
+
+    async def _object_info(self, http: Any) -> dict[str, Any]:
+        return (await http.get(f"{self.comfy}/api/object_info")).json()
+
     async def catalog(self) -> list[dict[str, Any]]:
-        """The template rows `listing` picks from: Saddle's, or the endpoint's official templates in FAMILIES."""
+        """The template rows `listing` picks from: Saddle's, or the endpoint's official templates: the TUNED families at
+        once, every other open-weights image or clip template once checked (`checking` until then; one that fails the
+        check is not offered)."""
         async with httpx.AsyncClient(timeout=30) as http:
             if self.saddle:
                 return (await http.get(f"{self.saddle}/api/templates")).json().get("templates", [])
-            index = (await http.get(f"{self.comfy}/templates/index.json")).json()
-        rows = []
-        for template in (t for category in index for t in category.get("templates") or [] if FAMILIES.match(t.get("name", ""))):
-            name = template["name"]
+            index = await self._index(http)
+        rows, unchecked = [], []
+        for template in (t for category in index for t in category.get("templates") or []):
+            name = template.get("name", "")
             self.titles[name] = template.get("title") or name
-            rows.append({"name": name, "label": self.titles[name], "role": "creation", "kind": name.split("_")[0],
-                         "job": "edit" if name.startswith("image_") and ("edit" in name or "reference" in name) else "make"})
+            row = {"name": name, "label": self.titles[name], "role": "creation"}
+            if TUNED.match(name):
+                rows.append({**row, "kind": name.split("_")[0],
+                             "job": "edit" if name.startswith("image_") and ("edit" in name or "reference" in name) else "make"})
+            elif name.startswith("api_") or template.get("openSource") is False or template.get("mediaType") not in ("image", "video"):
+                continue  # partner models, and what makes neither a picture nor a clip
+            elif name not in self.checked:
+                unchecked.append(name)
+                rows.append({**row, "kind": template["mediaType"], "job": "make", "checking": True})
+            elif self.checked[name]["offer"]:
+                rows.append({**row, "kind": self.checked[name]["kind"], "job": self.checked[name]["job"]})
+        if unchecked and (self.checking is None or self.checking.done()):
+            self.checking = asyncio.create_task(self._check_all(unchecked))
         return rows
+
+    async def _check_all(self, names: list[str]) -> None:
+        """Check `names`, CHECKS_AT_ONCE at a time, against one read of the endpoint's object_info."""
+        gate = asyncio.Semaphore(CHECKS_AT_ONCE)
+        async with httpx.AsyncClient(timeout=60) as http:
+            info = await self._object_info(http)
+
+            async def one(name: str) -> None:
+                async with gate:
+                    self.checked[name] = await self._check(http, name, info)
+
+            await asyncio.gather(*map(one, names))
+
+    async def _check(self, http: Any, name: str, info: dict[str, Any]) -> dict[str, Any]:
+        """Whether a template can run live here: it has a prompt slot, a seed slot and a sampler that starts from an
+        empty latent or a picture (its record says), and the endpoint has every node class and model file its graph
+        names (a file in another precision counts: `swaps`). Records are cached on disk by template file and object_info."""
+        try:
+            profile = Profile(await self._record(http, name, info))
+        except Exception as error:  # noqa: BLE001  (a template that cannot be read is not offered, whatever the reason)
+            return {"offer": False, "why": f"unreadable: {str(error)[:200]}"}
+        missing, swaps = gaps(profile.wf, info)
+        why = ("no prompt slot" if not profile.prompt else "no seed slot" if not profile.seed
+               else "no sampler from an empty latent or a picture" if profile.start() is None
+               else f"the endpoint lacks {', '.join(missing)}" if missing else None)
+        return {"offer": why is None, "why": why, "kind": profile.kind, "job": "edit" if profile.edits else "make", "swaps": swaps}
 
     def _finetunes(self) -> list[dict[str, Any]]:
         """The fine-tunes a template's model file may be swapped for: the manifest's `finetunes` and the user's own
@@ -677,7 +730,8 @@ class Live:
         """Once per template, GPU and model files, while the loop is idle: 1- and 2-step live jobs at two sizes, fresh
         words and seed each (nothing cached), fitted to a fixed cost plus ms per step per megapixel. Any input stops it;
         it runs again at the next rest."""
-        if self.profile.kind != "image" or self.profile.live_steps is None or (key := await self._cal_key(self.profile)) in self.calibration:
+        if self.profile.kind != "image" or self.profile.live_steps is None or not self.profile.tuned \
+                or (key := await self._cal_key(self.profile)) in self.calibration:
             return
         points = []
         for steps, mp in ((1, 0.16), (2, 0.16), (1, 0.25), (2, 0.25)):
@@ -1195,9 +1249,10 @@ async def reply(send, status: int, body: bytes = b"", kind: bytes = b"applicatio
 
 
 def listing(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The templates that make a picture or a clip, by title, grouped Image / Edit / Clip."""
+    """The templates that make a picture or a clip, by title, grouped Image / Edit / Clip; `untuned` outside the TUNED
+    families, `checking` while the sidecar still checks one."""
     groups = {"Image": 0, "Edit": 1, "Clip": 2}
-    found = [{"name": row["name"], "title": title(row),
+    found = [{"name": row["name"], "title": title(row), "untuned": not TUNED.match(row["name"]), "checking": bool(row.get("checking")),
               "group": "Clip" if row.get("kind") == "video" else "Edit" if row.get("job") == "edit" else "Image"}
              for row in rows if row.get("role") == "creation" and row.get("kind") in ("image", "video")
              and row.get("compatibility", row.get("validation_status")) != "blocked"]
