@@ -554,6 +554,13 @@ second, models resident):
 | FLUX 3 Klein distilled | 0.88 s | 298 ms | 9.4/s (2.3 pictures/s) | 4.1 s (settle job 3.2 s) |
 | FLUX 3 Klein edit, with a portrait | 7.9 s (cold) | | | 12.5 s (live job 4.3 s, settle job 4.9 s) |
 
+On an RTX 4090 (24 GB), inside ComfyUI with another ComfyUI holding 10-17.5 GB of the same card, so the models stream
+in per job: Z-Image Turbo cold (models loading during the typing) 21.9 s from the first key to the first frame and
+21.9 s from the last key to settled; warm, through the sidebar tab, 1.9 s to the first frame, 3.8 frames/s while
+typing (0.76 pictures/s) and 5.9 s from the last key to settled (settle job 3.6 s), with a live job at 0.5 s. FLUX 3
+Klein distilled on a first visit (its encoders in fp8 and int8 in place of the files the template names): 8.6 s from
+opening the page to the first frame and 13.1 s to settled (settle job 3.7 s), with a warm live job at 0.24 s.
+
 Settling from the live frame at 1 MP, warm (the live frame, its door, bicycle,
 plants and cat, kept their places in every family; the settle adds detail):
 

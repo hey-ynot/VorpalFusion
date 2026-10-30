@@ -263,12 +263,18 @@ class Live:
         """A template's profile, read from Saddle or built here (again when `fresh`: choosing a template re-reads it)."""
         if fresh or name not in self.profiles:
             async with httpx.AsyncClient(timeout=30) as http:
-                profile = Profile(await self._record(http, name))
+                info = None if self.saddle else await self._object_info(http)  # Saddle's record carries its own swaps
+                profile = Profile(await self._record(http, name, info))
                 profile.tuned = bool(TUNED.match(name))
-                profile.swaps.update(self.checked.get(name, {}).get("swaps", {}))  # files the endpoint has in another precision
+                missing, swaps = gaps(profile.wf, info) if info else ([], {})
+                profile.swaps.update(swaps)  # files the endpoint has in another precision
                 for asset in LIVE_MODELS:  # a lighter file the manifest names, where the endpoint has it
                     if asset["replaces"] in json.dumps(profile.wf) and asset["name"] in await self._models(http, asset["folder"]):
                         profile.swaps[asset["replaces"]] = asset["name"]
+                # A file the endpoint lacks fails the choice here: ComfyUI runs a graph whose other outputs validate, so
+                # the job would end at once with no picture and the page would wait on it.
+                if missing := [m for m in missing if m not in profile.swaps]:
+                    raise TemplateError(f"this ComfyUI lacks {', '.join(missing)}. Install it, or choose another template.")
                 tiny = await self._models(http, "vae_approx")
                 for asset in DRAFT_DECODERS:  # the endpoint's file of that name, whatever its extension
                     if found := next((f for f in tiny if Path(f).stem == Path(asset["name"]).stem), None):
@@ -1279,8 +1285,8 @@ async def app(scope, receive, send) -> None:
     elif path == "/template" and method == "POST":
         try:
             described = await live.use(json.loads(await read_body(receive))["name"])
-        except (TemplateError, ValueError, OSError) as error:  # comfy-cli could not build the record
-            await reply(send, 422, json.dumps({"message": f"VorpalFusion could not read that template: {error}"}).encode())
+        except (TemplateError, ValueError, OSError) as error:  # comfy-cli could not build the record, or the endpoint lacks a file
+            await reply(send, 422, json.dumps({"message": f"VorpalFusion cannot run that template: {error}"}).encode())
         else:
             await reply(send, 200, json.dumps(described).encode())
     elif path == "/state" and method == "POST":

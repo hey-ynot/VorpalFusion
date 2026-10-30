@@ -1395,14 +1395,16 @@ async function resync() {
     call('library').then((lib) => { $('libbtn').hidden = !lib?.ok; });  // no Saddle, no library
   }
   const choosable = templates.filter((t) => !t.checking);
-  const name = choosable.some((t) => t.name === template) ? template
-    : (choosable.find((t) => t.name === 'image_flux3_klein_distilled_t2i') ?? choosable[0])?.name;
-  if (name) await useTemplate(name);
+  if (choosable.some((t) => t.name === template)) return useTemplate(template);
+  // A first visit: the default, else the next tuned picture template this ComfyUI has the files for.
+  const first = choosable.filter((t) => t.group === 'Image' && !t.untuned)
+    .sort((a, b) => (b.name === 'image_flux3_klein_distilled_t2i') - (a.name === 'image_flux3_klein_distilled_t2i'));
+  for (const t of first.length ? first : choosable.slice(0, 1)) if (await useTemplate(t.name)) return;
 }
 async function useTemplate(name, opts = {}) {
   const r = await post('template', JSON.stringify({ name }));
-  if (r?.status === 422) return phase('failed', { message: (await r.json()).message });  // comfy-cli could not build it
-  if (!r?.ok) return;
+  if (r?.status === 422) { phase('failed', { message: (await r.json()).message }); return false; }  // comfy-cli could not build it, or a file is missing
+  if (!r?.ok) return false;
   const next = await r.json();
   if (name !== template) {
     values = {}; clipHasSound = false;
@@ -1415,8 +1417,9 @@ async function useTemplate(name, opts = {}) {
   epochV = v + 1;  // frames for older templates or pictures are dropped from here
   lastLive = null;
   renderControls();
-  if (opts.quiet) return;
+  if (opts.quiet) return true;
   if (await checkSources()) send();
+  return true;
 }
 $('template').addEventListener('change', () => useTemplate($('template').value));
 $('model').addEventListener('change', () => { model = $('model').value || null; persist(); soon(); });
