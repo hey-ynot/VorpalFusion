@@ -13,7 +13,7 @@ Live image and clip generation over any ComfyUI template, on your own GPU.
 [![Open weights only](https://img.shields.io/badge/models-open%20weights%20only-f5a524)](#models)
 [![#OpenSourceHiggsfield](https://img.shields.io/badge/%23-OpenSourceHiggsfield-black)](docs/demo.md)
 
-<img src="docs/media/vorpalfusion.gif" alt="Jellyfish clips made in VorpalFusion: a pink felt jellyfish diorama coming alive, an astronaut riding a jellyfish past Saturn, a kaleidoscope jellyfish" width="720">
+<img src="docs/media/vorpalfusion.gif" alt="In VorpalFusion: an astronaut riding a translucent jellyfish over the moon is restyled live into a pink wool-felt diorama, which then comes alive as a clip" width="720">
 
 <sub>FLUX 3 Klein · FastH3 · LTX-2.5 · Z-Image · Krea 2 · SeedVR2 — all running locally through ComfyUI</sub>
 
