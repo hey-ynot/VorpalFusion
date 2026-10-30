@@ -2,7 +2,7 @@
 
 # VorpalFusion
 
-**The picture keeps up with you.**
+**Slice through image and video edits before they ever settle.**
 
 Live image and clip generation over any ComfyUI template, on your own GPU.
 
