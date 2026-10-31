@@ -106,6 +106,9 @@ class Profile:
         self.prompt = prompt_slot(self.wf, self.slots)
         self.seed = seed_slot(self.slots)
         self.size = job_size(self.wf)
+        # A template whose output takes its pictures' size after a resize to a width and a height of its own (LTX-2.5
+        # first/last frame): those two numbers are its size.
+        self.sides = None if "megapixels" in self.size else self._sides()
         self.kind = "video" if any("Video" in node["class_type"] for node in self.wf.values()
                                    if node["class_type"].startswith("Save")) else "image"
         # The image slots in order, each with the role Saddle's summary names (first frame, reference, ...).
@@ -190,6 +193,8 @@ class Profile:
                 return {"kind": "choice", "aspect": aspect["address"], "choices": aspect["enum"], "value": aspect["current_value"],
                         "area": area["address"], "megapixels": area["current_value"], "min": area.get("min"), "max": area.get("max"),
                         "classes": SIZE_CLASSES, "raw": [aspect["address"], area["address"]]}
+        if self.sides:
+            return self._free(*self.sides)
         if "megapixels" not in self.size:
             return None
         _mp, (node, key) = self.size["megapixels"]
@@ -199,10 +204,35 @@ class Profile:
         width, height = self._at(node, "width"), self._at(node, "height")
         if key != "width" or not width or not height:
             return None
+        return self._free(width, height)
+
+    @staticmethod
+    def _free(width: dict[str, Any], height: dict[str, Any]) -> dict[str, Any]:
+        """Aspect chips and a size class over a width slot and a height slot."""
         w, h = int(width["current_value"]), int(height["current_value"])
         return {"kind": "free", "width": width["address"], "height": height["address"], "value": [w, h], "area": w * h,
                 "multiple": 32 if w % 32 == 0 and h % 32 == 0 else 16, "min": width.get("min") or 64,
                 "max": min(width.get("max") or 4096, 4096), "aspects": ASPECTS, "classes": SIZE_CLASSES, "raw": [width["address"], height["address"]]}
+
+    def _sides(self) -> tuple[dict[str, Any], dict[str, Any]] | None:
+        """The width and height slots (whole numbers, labelled so) that size the template's pictures, when it has
+        exactly one of each and a picture slot to resize."""
+        found = {side: [slot for slot in self.slots if slot.get("type") == "INT" and not slot.get("advanced")
+                        and (slot.get("label") or slot.get("name") or "").lower() == side
+                        and isinstance(slot.get("current_value"), int)] for side in ("width", "height")}
+        if len(found["width"]) != 1 or len(found["height"]) != 1 or not media_slots(self.wf, self.slots):
+            return None
+        return found["width"][0], found["height"][0]
+
+    def _sided(self, graph: dict[str, Any], megapixels: float) -> None:
+        """The width and height slots at `megapixels`, keeping the aspect the creator chose."""
+        width, height = self.sides
+        now = [next((graph[n]["inputs"][k] for n, k in slot.get("targets", []) if n in graph), slot["current_value"]) for slot in (width, height)]
+        if not all(isinstance(v, (int, float)) and v > 0 for v in now):
+            return
+        w, h = self.wh(megapixels * 1e6, now[0] / now[1], 32)
+        self._set(graph, width["address"], w)
+        self._set(graph, height["address"], h)
 
     @staticmethod
     def wh(area: float, aspect: float, multiple: int, low: int = 64, high: int = 4096) -> tuple[int, int]:
@@ -470,7 +500,9 @@ class Profile:
                     self._set(graph, slot["address"], LIVE_SECONDS)
             if self.kind == "video":
                 self._tiny(graph)
-                if "megapixels" not in self.size:
+                if self.sides:
+                    self._sided(graph, self.live_size(state))
+                elif "megapixels" not in self.size:
                     self._shrink(graph)
             if state.get("lock") and panels == 1 and self.kind == "image" and not any(s["slot"] == LATENT for s in state.get("sources") or []):
                 self._lock(graph, state["lock"])

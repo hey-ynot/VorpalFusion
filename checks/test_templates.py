@@ -87,3 +87,16 @@ def test_a_clip_attends_with_int8_unless_its_template_picks_its_own():
     assert knots and [n["inputs"]["sigmas"] for n in ltx.build(state, settle=False)[0].values() if n["class_type"] == "ManualSigmas"] == knots
     ltx.thin = True
     assert [n["inputs"]["sigmas"] for n in ltx.build(state, settle=False)[0].values() if n["class_type"] == "ManualSigmas"] == [thinned(k) for k in knots]
+
+
+def test_a_clip_sized_by_a_width_and_a_height_gets_the_aspect_control():
+    """LTX-2.5 first/last frame resizes its pictures to a width and a height of its own: those two slots are its size
+    control (aspect chips and a size class), and a draft keeps the chosen aspect at the live size."""
+    ltx = Profile(FIXTURES["records"]["video_ltx2_5_flf2v"])
+    sizing = ltx.sizing()
+    assert sizing and sizing["kind"] == "free", sizing
+    width, height = ltx.sides
+    state = {"prompt": "a fox", "seed": 1, "sources": [], "values": {width["address"]: 720, height["address"]: 1280}}
+    graph = ltx.build(state, settle=False)[0]
+    w, h = [next(graph[n]["inputs"][k] for n, k in slot["targets"] if n in graph) for slot in (width, height)]
+    assert w < h and w * h < 0.2e6, (w, h)
