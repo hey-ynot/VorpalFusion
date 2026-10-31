@@ -289,10 +289,12 @@ def gaps(graph: Mapping[str, Any], object_info: Mapping[str, Any]) -> tuple[list
                 continue  # a picture slot takes the creator's own file
             if others := same_model(value, choices):
                 swaps[value] = others[0]  # the first variant found; choosing by size and free VRAM would pick better
-            else:
-                missing.append(value)
+            elif value.lower().endswith(MODEL_SUFFIXES):
+                missing.append(value)  # a model file the endpoint lacks; any other choice (a mode, a crop) is the node's to check
     return sorted(set(missing)), swaps
 
+
+MODEL_SUFFIXES = (".safetensors", ".sft", ".ckpt", ".pt", ".pt2", ".pth", ".bin", ".gguf", ".pkl", ".onnx")
 
 # Loader inputs that take a file from the endpoint's input folder.
 MEDIA_INPUTS = {

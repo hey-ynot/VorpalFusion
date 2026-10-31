@@ -48,16 +48,19 @@ def test_every_creation_template_starts_its_sampler_from_nothing_or_a_picture():
 
 def test_gaps():
     """Every node class and choice the graph names, against object_info: a lacking class, a partner node, a missing
-    file, and a file the endpoint has in another precision (a swap); a picture loader's file is the creator's."""
+    file, and a file the endpoint has in another precision (a swap); a picture loader's file is the creator's, and a
+    choice that is not a model file (a crop position) is the node's own to check."""
     graph = {"1": {"class_type": "UNETLoader", "inputs": {"unet_name": "krea2_turbo_bf16.safetensors"}},
              "2": {"class_type": "VAELoader", "inputs": {"vae_name": "absent.safetensors"}},
              "3": {"class_type": "LoadImage", "inputs": {"image": "example.png"}},
              "4": {"class_type": "CustomNode", "inputs": {}}, "5": {"class_type": "PartnerImageNode", "inputs": {}},
-             "6": {"class_type": "KSampler", "inputs": {"sampler_name": "euler", "model": ["1", 0]}}}
+             "6": {"class_type": "KSampler", "inputs": {"sampler_name": "euler", "model": ["1", 0]}},
+             "7": {"class_type": "ImageCrop", "inputs": {"position": "center"}}}
     info = {"UNETLoader": {"input": {"required": {"unet_name": [["krea2_turbo_fp8_scaled.safetensors"]]}}},
             "VAELoader": {"input": {"required": {"vae_name": [["ae.safetensors"]]}}},
             "LoadImage": {"input": {"required": {"image": [["other.png"]]}}}, "PartnerImageNode": {"api_node": True},
-            "KSampler": {"input": {"required": {"sampler_name": ["COMBO", {"options": ["euler"]}]}}}}
+            "KSampler": {"input": {"required": {"sampler_name": ["COMBO", {"options": ["euler"]}]}}},
+            "ImageCrop": {"input": {"required": {"position": ["COMBO", {"options": ["top", "bottom"]}]}}}}
     missing, swaps = gaps(graph, info)
     assert missing == ["CustomNode", "PartnerImageNode (a partner API node)", "absent.safetensors"], missing
     assert swaps == {"krea2_turbo_bf16.safetensors": "krea2_turbo_fp8_scaled.safetensors"}, swaps
