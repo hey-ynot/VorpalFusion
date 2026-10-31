@@ -222,7 +222,7 @@ class Live:
         self.profiles: dict[str, Profile] = {}  # every template read, so a snapshot of another one can climb
         self.records: dict[str, dict[str, Any]] = {}  # without Saddle: the records built here, by template
         self.titles: dict[str, str] = {}  # without Saddle: the endpoint's own template titles
-        self.checked: dict[str, dict[str, Any]] = {}  # without Saddle: each untuned template's verdict ({offer, why, kind, job, swaps})
+        self.checked: dict[str, dict[str, Any]] = {}  # without Saddle: each template's verdict ({offer, why, kind, job, swaps})
         self.checking: asyncio.Task | None = None  # the background check of the templates not yet checked
         self.views: OrderedDict[str, tuple[bytes, str]] = OrderedDict()  # a rung's picture as shown (JPEG) or its clip, by job
         # The ladder: rungs asked for, run one at a time below live and settle. Live keeps working: any change
@@ -305,8 +305,8 @@ class Live:
 
     async def catalog(self) -> list[dict[str, Any]]:
         """The template rows `listing` picks from: Saddle's, or the endpoint's official templates: the TUNED families at
-        once, every other open-weights image or clip template once checked (`checking` until then; one that fails the
-        check is not offered)."""
+        once (dropped once their check finds this endpoint cannot run them), every other open-weights image or clip
+        template once checked (`checking` until then; one that fails the check is not offered)."""
         async with httpx.AsyncClient(timeout=30) as http:
             if self.saddle:
                 return (await http.get(f"{self.saddle}/api/templates")).json().get("templates", [])
@@ -317,6 +317,11 @@ class Live:
             self.titles[name] = template.get("title") or name
             row = {"name": name, "label": self.titles[name], "role": "creation"}
             if TUNED.match(name):
+                if name in self.checked and not self.checked[name]["offer"]:
+                    continue  # checked, and this endpoint cannot run it (a model file or a node it lacks)
+                if name not in self.checked:
+                    unchecked.append(name)  # listed at once; dropped if its check finds it cannot run here
+                    row = {**row, "pending": True}
                 rows.append({**row, "kind": name.split("_")[0],
                              "job": "edit" if name.startswith("image_") and ("edit" in name or "reference" in name) else "make"})
             elif name.startswith("api_") or template.get("openSource") is False or template.get("mediaType") not in ("image", "video"):
@@ -1265,7 +1270,7 @@ def listing(rows: list[dict[str, Any]], detected: bool = False) -> list[dict[str
     """The templates that make a picture or a clip, by title, grouped Image / Edit / Clip; `untuned` outside the TUNED
     families, `checking` while the sidecar still checks one, `detected` when the sidecar found it (no Saddle to list it)."""
     groups = {"Image": 0, "Edit": 1, "Clip": 2}
-    found = [{"name": row["name"], "title": title(row), "untuned": not TUNED.match(row["name"]), "checking": bool(row.get("checking")), "detected": detected,
+    found = [{"name": row["name"], "title": title(row), "untuned": not TUNED.match(row["name"]), "checking": bool(row.get("checking")), "pending": bool(row.get("pending")), "detected": detected,
               "group": "Clip" if row.get("kind") == "video" else "Edit" if row.get("job") == "edit" else "Image"}
              for row in rows if row.get("role") == "creation" and row.get("kind") in ("image", "video")
              and row.get("compatibility", row.get("validation_status")) != "blocked"]

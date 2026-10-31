@@ -1388,7 +1388,7 @@ $('showuntuned').addEventListener('change', () => { showUntuned = $('showuntuned
 async function fetchTemplates() {
   const r = await call('templates'); if (!r?.ok) return false;
   templates = await r.json(); fillChooser();
-  if (templates.some((t) => t.checking)) setTimeout(fetchTemplates, 5000);
+  if (templates.some((t) => t.checking || t.pending)) setTimeout(fetchTemplates, 5000);
   return true;
 }
 async function resync() {
