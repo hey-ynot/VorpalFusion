@@ -880,9 +880,15 @@ function setTool(next) {
   $('boxes').classList.toggle('tool', !!tool);
   if (tool) { boxesOff = false; paintBoxes(); $('say').textContent = tool === 'box' ? 'Box tool: draw a box on the picture' : 'Pin: draw the region to keep'; }
 }
-async function pinAsReference() {  // F: the picture on stage into the first reference slot; from a template with none, the family's edit template
+async function pinAsReference() {  // F: the picture on stage into the first reference slot; from a template with none, the family's
+  // edit template where the manifest lists one, else its own source (image to image, the change slider sets how far)
   const src = front.getAttribute('src'); if (!src) return phase('failed', { message: 'Nothing on stage to use as a reference yet: type, and let a picture land.' });
   const blob = await (await fetch(src)).blob();
+  if (!profile?.edits && !profile?.edit_template && profile?.media?.some((m) => m.address === 'latent')) {
+    await useSource(new File([blob], 'stage.png', { type: blob.type || 'image/png' }), 'latent');
+    document.querySelector('[data-match="1"]')?.click();
+    return void ($('say').textContent = 'The picture on stage is the source now: the words change it, as far as the change slider says');
+  }
   if (!profile?.edits) {
     if (!profile?.edit_template) return phase('failed', { message: 'This template takes no reference picture, and no edit template is listed for it.' });
     await useTemplate(profile.edit_template, { quiet: true });
@@ -1453,7 +1459,7 @@ function renderControls() {
   $('model').hidden = !models.length;
   $('model').innerHTML = models.length ? `<option value="">${esc(profile.title)}</option>` + models.map((m) => `<option value="${esc(m)}">${esc(m)}</option>`).join('') : '';
   $('model').value = model || '';
-  paintFlow(); $('boxbtn').hidden = !profile?.layout; $('refbtn').hidden = !(profile?.kind === 'image' && (profile.edits || profile.edit_template)); $('pinbtn').hidden = !profile?.pin; if (!profile?.layout && !profile?.pin) setTool(null); paintBoxes();
+  paintFlow(); $('boxbtn').hidden = !profile?.layout; $('refbtn').hidden = !(profile?.kind === 'image' && (profile.edits || profile.edit_template || profile.media?.some((m) => m.address === 'latent'))); $('pinbtn').hidden = !profile?.pin; if (!profile?.layout && !profile?.pin) setTool(null); paintBoxes();
   renderSize(); renderTimeline(); layoutPanels(); ladderControls();
   // The seed field renders nine pictures while the loop is idle; a clip costs seconds each, so clips have none.
   $('seeds').disabled = profile?.kind === 'video';
