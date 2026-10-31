@@ -106,7 +106,8 @@
     "note": "Templates whose draft thins a hand-written schedule (ManualSigmas) to the live-steps count (profile.thinned), measured against the template's own knots on the same seeds (RTX 5090): Pika H3 Flex six steps at four, SSIM to the six-step draft 0.52-0.94 where another seed scores 0.43-0.71, and the same composition; 0.4 s off a 1.8 s text-to-video draft. LTX 2.5's thinned stages recompose the picture (SSIM at the other-seed floor), so it is not listed."
   },
   "edit_templates": {
-    "image_flux3_klein_distilled_t2i": "image_flux3_klein_distilled_image_edit"
+    "image_flux3_klein_distilled_t2i": "image_flux3_klein_distilled_image_edit",
+    "image_krea2_turbo_t2i": "image_krea2_turbo_int8_image_style_reference"
   },
   "finetunes": [],
   "finetunes_note": "Fine-tunes of a template's own model file, offered as its Model choice where the template uses `replaces` and the endpoint has `name` in `folder`: {name, folder, replaces, label}. A user's own entries go in ~/.config/gpu-vision/finetunes.json (the same shape), read beside these.",
